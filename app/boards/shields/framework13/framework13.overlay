@@ -1,0 +1,15 @@
+/*
+ * Copyright (c) 2022 The ZMK Contributors
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include "framework13.dtsi"
+
+#include <behaviors.dtsi>
+
+/ {
+    chosen {
+        zmk,physical-layout = &matrix_physical_layout;
+    };
+};

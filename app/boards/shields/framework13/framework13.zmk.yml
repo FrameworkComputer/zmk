@@ -1,0 +1,9 @@
+file_format: "1"
+id: framework13
+name: Framework 13
+type: shield
+url: https://github.com/zmkfirmware/daisy
+requires: [arduino_uno]
+features:
+  - keys
+  - studio
