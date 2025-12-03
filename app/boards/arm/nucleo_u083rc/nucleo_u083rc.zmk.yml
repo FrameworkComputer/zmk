@@ -1,0 +1,9 @@
+file_format: "1"
+id: nucleo_u083rc
+name: Nucleo U083RC
+type: board
+arch: arm
+outputs:
+  - usb
+url: https://example.com/nucleo_u083rc
+exposes: [arduino_uno]
