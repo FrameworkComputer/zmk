@@ -1,9 +1,44 @@
 / {
-    leds {
-        compatible = "gpio-leds";
-        /* Capslock LED on keyboard membrane. Has pulldown on main PCB */
-        caps_led: led_3 {
-            gpios = <&gpioc          15 GPIO_ACTIVE_HIGH>;
-        };
+    kscan0: kscan_matrix {
+        compatible = "zmk,kscan-gpio-matrix";
+        wakeup-source;
+
+        diode-direction = "col2row";
+        debounce-press-ms = <1>;
+        debounce-release-ms = <5>;
+        poll-period-ms = <1>;
+
+	// Avoiding pins that have an alternative function on the Nucleo board
+        col-gpios
+        = <&gpioa 11 GPIO_ACTIVE_HIGH> // KSO0
+        , <&gpioa 12 GPIO_ACTIVE_HIGH> // KSO1
+        , <&gpiob  0 GPIO_ACTIVE_HIGH> // KSO2
+        , <&gpiob  1 GPIO_ACTIVE_HIGH> // KSO3
+        , <&gpiob  2 GPIO_ACTIVE_HIGH> // KSO4
+        , <&gpiob  3 GPIO_ACTIVE_HIGH> // KSO5
+        , <&gpiob  4 GPIO_ACTIVE_HIGH> // KSO6
+        , <&gpiob  5 GPIO_ACTIVE_HIGH> // KSO7
+        , <&gpiob  7 GPIO_ACTIVE_HIGH> // KSO8
+        , <&gpiob 10 GPIO_ACTIVE_HIGH> // KSO9
+        , <&gpiob 11 GPIO_ACTIVE_HIGH> // KS10
+        , <&gpiob 12 GPIO_ACTIVE_HIGH> // KS11
+        , <&gpiob 13 GPIO_ACTIVE_HIGH> // KS12
+        , <&gpiob 14 GPIO_ACTIVE_HIGH> // KS13
+        , <&gpiob 15 GPIO_ACTIVE_HIGH> // KS14
+        , <&gpioc  4 GPIO_ACTIVE_HIGH> // KS15
+        , <&gpioc  2 GPIO_ACTIVE_HIGH> // KS16
+        , <&gpioc  3 GPIO_ACTIVE_HIGH> // KS17
+        ;
+
+        row-gpios
+        = <&gpioa  0 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI0
+        , <&gpioa  1 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI1
+        , <&gpioa  4 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI2
+        , <&gpioa  6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI3
+        , <&gpioa  7 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI4
+        , <&gpioa  8 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI5
+        , <&gpioa  9 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI6
+        , <&gpioa 10 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI7
+        ;
     };
 };

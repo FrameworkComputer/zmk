@@ -19,7 +19,7 @@
 
 / {
     macros {
-	disp: display_switch {
+        disp: display_switch {
             compatible = "zmk,behavior-macro";
             #binding-cells = <0>;
             // Simulate press WIN+P
@@ -28,8 +28,8 @@
                 = <&macro_press &kp LGUI>
                 , <&macro_tap &kp P>
                 , <&macro_release &kp LGUI>
-		;
-	};
+                ;
+        };
     };
     keymap {
         compatible = "zmk,keymap";
@@ -67,7 +67,7 @@
                 // |       |     |     |      |      |                             |      |      | HOME   | PG UP  | END   |
                 // |                                                                                      | PG DN  |
                 &tog FNLK &kp F1 &kp F2   &kp F3   &kp F4   &kp F5   &kp F6   &kp F7   &kp F8   &kp F9    &kp F10   &kp F11   &kp F12   &kp INS
-                ______    ______ ______   ______   ______   ______   ______   ______   ______   ______    ______    ______    ______    ______    ______
+                ______    ______ ______   ______   ______   ______   ______   ______   ______   ______    ______    ______    ______    ______
                 ______    ______ ______   ______   ______   ______   ______   ______   ______   ______    ______    ______    &kp PAUSE ______
                 ______    ______ ______   ______   ______   ______   ______   ______   ______   ______    ______    ______    ______
                 ______           ______   ______   ______   ______   &kp PAUSE ______  ______   ______    ______    ______    ______
