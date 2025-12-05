@@ -1,9 +1,0 @@
-# Copyright (c) 2022 The ZMK Contributors
-# SPDX-License-Identifier: MIT
-
-config SHIELD_FRAMEWORK13_BASE
-    bool
-
-config SHIELD_FRAMEOWRK13
-    def_bool $(shields_list_contains,framework13)
-    select SHIELD_FRAMEWORK13_BASE

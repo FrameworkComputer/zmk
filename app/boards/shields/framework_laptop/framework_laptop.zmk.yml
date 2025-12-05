@@ -1,8 +1,8 @@
 file_format: "1"
-id: framework13
-name: Framework 13
+id: framework_laptop
+name: Framework Laptop
 type: shield
-url: https://github.com/zmkfirmware/daisy
+url: https://frame.work
 requires: [arduino_uno]
 features:
   - keys

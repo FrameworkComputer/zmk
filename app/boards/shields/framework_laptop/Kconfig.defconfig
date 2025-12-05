@@ -1,9 +1,9 @@
 # Copyright (c) 2022 The ZMK Contributors
 # SPDX-License-Identifier: MIT
 
-if SHIELD_FRAMEWORK13
+if SHIELD_FRAMEWORK_LAPTOP
 
 config ZMK_KEYBOARD_NAME
-    default "Framework 13"
+    default "Framework Laptop"
 
 endif

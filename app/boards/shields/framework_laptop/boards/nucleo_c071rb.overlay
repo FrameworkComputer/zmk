@@ -1,4 +1,5 @@
-// #include <st/c0/stm32c071Xb.dtsi>
+#include <st/c0/stm32c071Xb.dtsi>
+#include <st/c0/stm32c071rbtx-pinctrl.dtsi>
 
 / {
     kscan0: kscan_matrix {
