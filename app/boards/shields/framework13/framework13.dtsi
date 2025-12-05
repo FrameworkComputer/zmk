@@ -6,14 +6,18 @@
 
 #include <dt-bindings/led/led.h>
 #include <dt-bindings/zmk/matrix_transform.h>
-#include "framework13-layouts.dtsi"
 
 // References
 // https://github.com/FrameworkComputer/EmbeddedController/blob/fwk-hx20-hx30-4410/board/hx30/keyboard_customization.c
 // https://github.com/FrameworkComputer/EmbeddedController/blob/fwk-lilac-27116/zephyr/program/framework/src/keyboard_customization_13.c#L30
 
 / {
-    matrix_transform: matrix_transform {
+    chosen {
+	zmk,kscan = &kscan0;
+	zmk,matrix-transform = &framework13_ansi_transform;
+    };
+
+    framework13_ansi_transform: framework13_ansi_transform {
         compatible = "zmk,matrix-transform";
         rows = <8>;
         columns = <16>;
@@ -29,7 +33,7 @@
                                                                                                                     RC(1,8)
         >;
     };
-    iso_matrix_transform: iso_matrix_transform {
+    framework13_iso_matrix_transform: framework13_iso_matrix_transform {
         compatible = "zmk,matrix-transform";
         rows = <8>;
         columns = <16>;
@@ -45,9 +49,4 @@
                                                                                                                     RC(1,8)
         >;
     };
-};
-
-&matrix_physical_layout {
-    kscan = <&kscan0>;
-    transform = <&matrix_transform>;
 };

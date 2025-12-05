@@ -9,7 +9,4 @@
 #include <behaviors.dtsi>
 
 / {
-    chosen {
-        zmk,physical-layout = &matrix_physical_layout;
-    };
 };
