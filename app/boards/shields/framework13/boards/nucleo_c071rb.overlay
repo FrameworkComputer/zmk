@@ -1,0 +1,44 @@
+/ {
+    kscan0: kscan_matrix {
+        compatible = "zmk,kscan-gpio-matrix";
+        wakeup-source;
+
+        diode-direction = "col2row";
+        debounce-press-ms = <1>;
+        debounce-release-ms = <5>;
+        poll-period-ms = <1>;
+
+	// Avoiding pins that have an alternative function on the Nucleo board
+        col-gpios
+        = <&gpiob 11 GPIO_ACTIVE_HIGH> // KSO0
+        , <&gpioc 11 GPIO_ACTIVE_HIGH> // KSO1
+        , <&gpiod  5 GPIO_ACTIVE_HIGH> // KSO2
+        , <&gpioc  3 GPIO_ACTIVE_HIGH> // KSO3
+        , <&gpioa  9 GPIO_ACTIVE_HIGH> // KSO4
+        , <&gpioa  8 GPIO_ACTIVE_HIGH> // KSO5
+        , <&gpiob  5 GPIO_ACTIVE_HIGH> // KSO6
+        , <&gpioa 10 GPIO_ACTIVE_HIGH> // KSO7
+        , <&gpiod  1 GPIO_ACTIVE_HIGH> // KSO8
+        , <&gpiod  6 GPIO_ACTIVE_HIGH> // KSO9
+        , <&gpiob 12 GPIO_ACTIVE_HIGH> // KS10
+        , <&gpiob  1 GPIO_ACTIVE_HIGH> // KS11
+        , <&gpiob 15 GPIO_ACTIVE_HIGH> // KS12
+        , <&gpiob 14 GPIO_ACTIVE_HIGH> // KS13
+        , <&gpiob 13 GPIO_ACTIVE_HIGH> // KS14
+        , <&gpiob 10 GPIO_ACTIVE_HIGH> // KS15
+        , <&gpiod  8 GPIO_ACTIVE_HIGH> // KS16
+        , <&gpiod  9 GPIO_ACTIVE_HIGH> // KS17
+        ;
+
+        row-gpios
+        = <&gpioc 10 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI0
+        , <&gpioc 12 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI1
+        , <&gpiod  4 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI2
+        , <&gpiod  0 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI3
+        , <&gpiod  3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI4
+        , <&gpioc  6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI5
+        , <&gpioc  2 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI6
+        , <&gpiob 12 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI7
+        ;
+    };
+};
