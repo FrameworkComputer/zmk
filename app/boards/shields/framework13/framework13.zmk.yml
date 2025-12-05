@@ -7,3 +7,7 @@ requires: [arduino_uno]
 features:
   - keys
   - studio
+siblings:
+  framework_laptop_12
+  framework_laptop_13_ansi
+  framework_laptop_13_iso
