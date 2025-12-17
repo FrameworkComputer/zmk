@@ -53,6 +53,14 @@
 	status = "disabled";
 };
 
+&adc {
+	status = "disabled";
+};
+
+&pwm0 {
+	status = "disabled";
+};
+
 &uicr {
 	// Use 	P0.09 and P0.10 as GPIO for KSO instead of NFC
 	nfct-pins-as-gpios;
