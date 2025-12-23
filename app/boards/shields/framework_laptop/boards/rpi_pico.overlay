@@ -1,0 +1,56 @@
+#include <raspberrypi/rpi_pico/rp2040.dtsi>
+
+/ {
+    chosen {
+        zmk,kscan = &kscan0;
+    };
+    kscan0: kscan_matrix {
+        compatible = "zmk,kscan-gpio-matrix";
+        wakeup-source;
+
+        diode-direction = "col2row";
+        // debounce-press-ms = <1>;
+        // debounce-release-ms = <5>;
+        // poll-period-ms = <1>;
+
+        col-gpios
+        = <&gpio0  8 GPIO_ACTIVE_HIGH> // KSO0
+        , <&gpio0  9 GPIO_ACTIVE_HIGH> // KSO1
+        , <&gpio0 10 GPIO_ACTIVE_HIGH> // KSO2
+        , <&gpio0 11 GPIO_ACTIVE_HIGH> // KSO3
+        , <&gpio0 12 GPIO_ACTIVE_HIGH> // KSO4
+        , <&gpio0 13 GPIO_ACTIVE_HIGH> // KSO5
+        , <&gpio0 14 GPIO_ACTIVE_HIGH> // KSO6
+        , <&gpio0 15 GPIO_ACTIVE_HIGH> // KSO7
+        , <&gpio0 16 GPIO_ACTIVE_HIGH> // KSO8
+        , <&gpio0 17 GPIO_ACTIVE_HIGH> // KSO9
+        , <&gpio0 18 GPIO_ACTIVE_HIGH> // KS10
+        , <&gpio0 19 GPIO_ACTIVE_HIGH> // KS11
+        , <&gpio0 20 GPIO_ACTIVE_HIGH> // KS12
+        , <&gpio0 21 GPIO_ACTIVE_HIGH> // KS13
+        , <&gpio0 22 GPIO_ACTIVE_HIGH> // KS14
+        , <&gpio0 26 GPIO_ACTIVE_HIGH> // KS15
+        , <&gpio0 27 GPIO_ACTIVE_HIGH> // KS16
+        , <&gpio0 28 GPIO_ACTIVE_HIGH> // KS17
+        ;
+
+        row-gpios
+        = <&gpio0  0 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI0
+        , <&gpio0  1 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI1
+        , <&gpio0  2 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI2
+        , <&gpio0  3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI3
+        , <&gpio0  4 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI4
+        , <&gpio0  5 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI5
+        , <&gpio0  6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI6
+        , <&gpio0  7 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI7
+        ;
+    };
+};
+
+&gpio0 {
+    status = "okay";
+};
+
+zephyr_udc0: &usbd {
+  status = "okay";
+};
