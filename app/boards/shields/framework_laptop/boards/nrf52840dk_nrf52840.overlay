@@ -1,4 +1,7 @@
 / {
+	chosen {
+		zmk,kscan = &kscan0;
+	};
 	kscan0: kscan_matrix {
 		compatible = "zmk,kscan-gpio-matrix";
 		wakeup-source;
