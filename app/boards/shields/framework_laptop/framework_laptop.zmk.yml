@@ -3,7 +3,7 @@ id: framework_laptop
 name: Framework Laptop
 type: shield
 url: https://frame.work
-requires: [arduino_uno]
+requires: [arduino_uno, blackpill]
 features:
   - keys
   - studio

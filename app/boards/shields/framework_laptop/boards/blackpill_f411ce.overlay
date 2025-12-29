@@ -1,0 +1,98 @@
+/ {
+    chosen {
+        zmk,kscan = &kscan0;
+    };
+    kscan0: kscan_matrix {
+        compatible = "zmk,kscan-gpio-matrix";
+        wakeup-source;
+
+        diode-direction = "col2row";
+        // debounce-press-ms = <1>;
+        // debounce-release-ms = <5>;
+        // poll-period-ms = <1>;
+
+        // See blue numbers here: https://github.com/WeActStudio/WeActStudio.MiniSTM32F4x1
+        // Skipping GPIOs
+        // | Label | Blue number | Pin Name | Function     |
+        // | VB    | 2           | PC13     | Blue LED     |
+        // | R     | 7           |          | NRST Button  |
+        // | A11   | 32          | PA11     | USB D-       |
+        // | A12   | 33          | PA12     | USB D+       |
+        col-gpios
+        = <&blackpill 16 GPIO_ACTIVE_HIGH> // KSO0
+        , <&blackpill 17 GPIO_ACTIVE_HIGH> // KSO1
+        , <&blackpill 18 GPIO_ACTIVE_HIGH> // KSO2
+        , <&blackpill 19 GPIO_ACTIVE_HIGH> // KSO3
+        , <&blackpill 20 GPIO_ACTIVE_HIGH> // KSO4
+        , <&blackpill 21 GPIO_ACTIVE_HIGH> // KSO5
+        // Continue on the other side
+        , <&blackpill 25 GPIO_ACTIVE_HIGH> // KSO6
+        , <&blackpill 26 GPIO_ACTIVE_HIGH> // KSO7
+        , <&blackpill 27 GPIO_ACTIVE_HIGH> // KSO8
+        , <&blackpill 28 GPIO_ACTIVE_HIGH> // KSO9
+        , <&blackpill 29 GPIO_ACTIVE_HIGH> // KS10
+        , <&blackpill 30 GPIO_ACTIVE_HIGH> // KS11
+        , <&blackpill 31 GPIO_ACTIVE_HIGH> // KS12
+        // Skip GPIOs the USB data pins 32-33
+        // GPIOs 34-35 are not mapped
+        , <&blackpill 38 GPIO_ACTIVE_HIGH> // KS13
+        , <&blackpill 39 GPIO_ACTIVE_HIGH> // KS14
+        , <&blackpill 40 GPIO_ACTIVE_HIGH> // KS15
+        , <&blackpill 41 GPIO_ACTIVE_HIGH> // KS16
+        , <&blackpill 42 GPIO_ACTIVE_HIGH> // KS17
+        ;
+
+        row-gpios
+        // Skipping pin 1 (VBAT) and 2 (PC13, Blue LED)
+        = <&blackpill  3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI0
+        , <&blackpill  4 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI1
+        // Skipping pin 7, labeled R = NRST Button
+        // Pins 8-9 are not exposed
+        , <&blackpill 10 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI2
+        , <&blackpill 11 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI3
+        , <&blackpill 12 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI4
+        , <&blackpill 13 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI5
+        , <&blackpill 14 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI6
+        , <&blackpill 15 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI7
+        ;
+    };
+};
+
+&gpioa {
+    status = "okay";
+};
+&gpiob {
+    status = "okay";
+};
+&gpioc {
+    status = "okay";
+};
+
+// Disable unused interfaces to use all possible GPIOs
+&i2c3 {
+    status = "disabled";
+};
+&i2c1 {
+    status = "disabled";
+};
+&i2c2 {
+    status = "disabled";
+};
+&spi1 {
+    status = "disabled";
+};
+&usart1 {
+    status = "disabled";
+};
+&pwm4 {
+    status = "disabled";
+};
+&adc1 {
+    status = "disabled";
+};
+&vref {
+    status = "disabled";
+};
+&vbat {
+    status = "disabled";
+};
