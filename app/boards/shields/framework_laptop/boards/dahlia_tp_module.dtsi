@@ -9,8 +9,16 @@
 
 / {
     chosen {
-        zmk,kscan = &kscan0;
+        zmk,kscan = &kscan_deghost;
         zmk,matrix-transform = &dahlia_transform;
+    };
+
+    kscan_deghost: kscan_deghost {
+        compatible = "zmk,kscan-deghost";
+        kscan = <&kscan0>;
+        transform = <&dahlia_transform>;
+        rows = <8>;
+        columns = <18>;
     };
 
     dahlia_transform: dahlia_transform {
