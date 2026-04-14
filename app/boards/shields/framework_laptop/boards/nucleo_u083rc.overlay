@@ -45,3 +45,22 @@
         ;
     };
 };
+
+/*
+ * I2C HID target on I2C1 (PB8/SCL, PB9/SDA) at address 0x2c.
+ * IRQ output on PC5 (active-low, open-drain).
+ * Connect an external I2C host to D15 (SCL), D14 (SDA), and Morpho CN10 pin 6 (IRQ).
+ * Add 4.7k pull-ups on SDA and SCL to 3.3V.
+ */
+&i2c1 {
+    i2c_hid: hid-target@2c {
+        compatible = "zephyr,i2c-target-hid";
+        reg = <0x2c>;
+        irq-gpios = <&gpioc 5 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
+        vid = <0x32AC>;
+        pid = <0x0038>;
+        max-input-length = <11>;
+        max-output-length = <4>;
+        report-desc-length = <76>;
+    };
+};
