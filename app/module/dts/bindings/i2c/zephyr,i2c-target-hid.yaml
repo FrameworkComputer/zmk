@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Zephyr I2C target HID device.
+  Implements the device/target side of the Microsoft HID over I2C protocol
+  (v1.00), allowing a Zephyr device to appear as an HID peripheral to an
+  I2C controller host.
+
+compatible: "zephyr,i2c-target-hid"
+
+include: i2c-device.yaml
+
+properties:
+  irq-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      GPIO for host interrupt line (active-low). Assertion signals the host
+      that input data is available.
+
+  hid-desc-register:
+    type: int
+    default: 1
+    description: |
+      Register address from which the host reads the HID descriptor.
+      Default is 0x0001 per the HID over I2C specification.
+
+  vid:
+    type: int
+    required: true
+    description: USB Vendor ID reported in the HID descriptor.
+
+  pid:
+    type: int
+    required: true
+    description: USB Product ID reported in the HID descriptor.
+
+  version-id:
+    type: int
+    default: 256
+    description: |
+      Device version ID (BCD format) reported in the HID descriptor.
+      Default is 0x0100 (version 1.0).
+
+  max-input-length:
+    type: int
+    required: true
+    description: |
+      Maximum input report length including the 2-byte length prefix.
+      Must be large enough for the longest input report plus 2 bytes.
+
+  max-output-length:
+    type: int
+    default: 0
+    description: |
+      Maximum output report length including the 2-byte length prefix.
+      Set to 0 if the device does not accept output reports.
+
+  report-desc-length:
+    type: int
+    required: true
+    description: Size in bytes of the HID report descriptor.

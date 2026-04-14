@@ -1,0 +1,13 @@
+# I2C HID Target configuration options
+
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+config I2C_HID_TARGET
+	bool "I2C HID Target driver"
+	depends on GPIO
+	help
+	  Enable the I2C HID target device driver. This implements the
+	  device/target side of the Microsoft HID over I2C protocol (v1.00),
+	  allowing a Zephyr device to appear as an HID peripheral to a host
+	  via I2C.
