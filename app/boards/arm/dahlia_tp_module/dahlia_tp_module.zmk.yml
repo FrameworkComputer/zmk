@@ -1,0 +1,7 @@
+file_format: "1"
+id: dahlia_tp_module
+name: Dahlia Touchpad Module
+type: board
+arch: arm
+outputs:
+  - i2c

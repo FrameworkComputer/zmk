@@ -1,0 +1,6 @@
+board:
+  name: dahlia_tp_module_evt
+  full_name: Dahlia Touchpad Module (EVT)
+  vendor: framework
+  socs:
+    - name: stm32u073xx

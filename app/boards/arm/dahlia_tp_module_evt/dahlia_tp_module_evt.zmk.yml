@@ -1,0 +1,7 @@
+file_format: "1"
+id: dahlia_tp_module_evt
+name: Dahlia Touchpad Module (EVT)
+type: board
+arch: arm
+outputs:
+  - i2c

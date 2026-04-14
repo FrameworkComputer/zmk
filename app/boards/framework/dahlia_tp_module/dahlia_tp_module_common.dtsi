@@ -1,0 +1,43 @@
+/*
+ * Copyright (c) 2026
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Common DTS for Dahlia Touchpad Module — STM32U073CC (48-pin UFQFPN, 256KB).
+ * Shared between default (DVT/MP) and EVT variants.
+ */
+
+/ {
+	model = "Dahlia Touchpad Module";
+	compatible = "framework,dahlia-tp-module";
+
+	#address-cells = <1>;
+	#size-cells = <1>;
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+	};
+};
+
+/* Clock: HSI16 directly (no PLL) */
+&clk_hsi {
+	status = "okay";
+};
+
+&rcc {
+	clocks = <&clk_hsi>;
+	clock-frequency = <DT_FREQ_M(16)>;
+	ahb-prescaler = <1>;
+	apb1-prescaler = <1>;
+};
+
+/* Low-power tick source */
+&clk_lsi {
+	status = "okay";
+};
+
+stm32_lp_tick_source: &lptim1 {
+	clocks = <&rcc STM32_CLOCK(APB1, 31U)>,
+		<&rcc STM32_SRC_LSI LPTIM1_SEL(1)>;
+	status = "okay";
+};

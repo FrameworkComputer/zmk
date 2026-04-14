@@ -1,0 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# No UART — PA2/PA3 used for key matrix
+CONFIG_SERIAL=n
+CONFIG_CONSOLE=n
+CONFIG_UART_CONSOLE=n
+
+# GPIO
+CONFIG_GPIO=y

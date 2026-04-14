@@ -1,0 +1,63 @@
+/*
+ * Copyright (c) 2026
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Dahlia Touchpad Module — DVT/MP version (corrected pin mask).
+ * I2C1 on PB6/PB7, KSI4/KSI5 on PA9/PA10.
+ */
+
+/dts-v1/;
+#include <st/u0/stm32u073Xc.dtsi>
+#include <st/u0/stm32u073ccux-pinctrl.dtsi>
+#include "dahlia_tp_module_common.dtsi"
+
+/* I2C1 on PB6/PB7 (correct pin mask) */
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
+	pinctrl-names = "default";
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+};
+
+/ {
+	kscan0: kscan_matrix {
+		compatible = "zmk,kscan-gpio-matrix";
+		wakeup-source;
+		diode-direction = "col2row";
+		debounce-press-ms = <1>;
+		debounce-release-ms = <5>;
+		poll-period-ms = <1>;
+
+		col-gpios
+		= <&gpioa  0 GPIO_ACTIVE_HIGH> // KSO0
+		, <&gpioa  1 GPIO_ACTIVE_HIGH> // KSO1
+		, <&gpioa  8 GPIO_ACTIVE_HIGH> // KSO2
+		, <&gpioa  2 GPIO_ACTIVE_HIGH> // KSO3
+		, <&gpioa  3 GPIO_ACTIVE_HIGH> // KSO4
+		, <&gpioa  4 GPIO_ACTIVE_HIGH> // KSO5
+		, <&gpioa  5 GPIO_ACTIVE_HIGH> // KSO6
+		, <&gpioa  6 GPIO_ACTIVE_HIGH> // KSO7
+		, <&gpioa  7 GPIO_ACTIVE_HIGH> // KSO8
+		, <&gpiob  0 GPIO_ACTIVE_HIGH> // KSO9
+		, <&gpiob  1 GPIO_ACTIVE_HIGH> // KSO10
+		, <&gpiob  2 GPIO_ACTIVE_HIGH> // KSO11
+		, <&gpiob 10 GPIO_ACTIVE_HIGH> // KSO12
+		, <&gpiob 11 GPIO_ACTIVE_HIGH> // KSO13
+		, <&gpiob 12 GPIO_ACTIVE_HIGH> // KSO14
+		, <&gpiob 13 GPIO_ACTIVE_HIGH> // KSO15
+		, <&gpiob 14 GPIO_ACTIVE_HIGH> // KSO16
+		, <&gpiob 15 GPIO_ACTIVE_HIGH> // KSO17
+		;
+
+		row-gpios
+		= <&gpiob  3 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI0
+		, <&gpiob  4 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI1
+		, <&gpiob  5 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI2
+		, <&gpioa 11 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI3
+		, <&gpioa  9 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI4
+		, <&gpioa 10 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI5
+		, <&gpiob  8 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI6
+		, <&gpiob  9 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)> // KSI7
+		;
+	};
+};
