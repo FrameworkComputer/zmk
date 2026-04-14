@@ -15,6 +15,9 @@
 #include <dt-bindings/zmk/hid_usage_pages.h>
 #include <zmk/usb_hid.h>
 #include <zmk/hog.h>
+#if IS_ENABLED(CONFIG_I2C_HID_TARGET)
+#include <zmk/i2c_hid.h>
+#endif
 #include <zmk/event_manager.h>
 #include <zmk/events/ble_active_profile_changed.h>
 #include <zmk/events/usb_conn_state_changed.h>
@@ -23,8 +26,15 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-#define DEFAULT_TRANSPORT                                                                          \
-    COND_CODE_1(IS_ENABLED(CONFIG_ZMK_BLE), (ZMK_TRANSPORT_BLE), (ZMK_TRANSPORT_USB))
+#if IS_ENABLED(CONFIG_ZMK_BLE)
+#define DEFAULT_TRANSPORT ZMK_TRANSPORT_BLE
+#elif IS_ENABLED(CONFIG_ZMK_USB)
+#define DEFAULT_TRANSPORT ZMK_TRANSPORT_USB
+#elif IS_ENABLED(CONFIG_I2C_HID_TARGET)
+#define DEFAULT_TRANSPORT ZMK_TRANSPORT_I2C_HID
+#else
+#define DEFAULT_TRANSPORT ZMK_TRANSPORT_USB
+#endif
 
 static struct zmk_endpoint_instance current_instance = {};
 static enum zmk_transport preferred_transport =
@@ -59,6 +69,9 @@ bool zmk_endpoint_instance_eq(struct zmk_endpoint_instance a, struct zmk_endpoin
 
     case ZMK_TRANSPORT_BLE:
         return a.ble.profile_index == b.ble.profile_index;
+
+    case ZMK_TRANSPORT_I2C_HID:
+        return true;
     }
 
     LOG_ERR("Invalid transport %d", a.transport);
@@ -73,6 +86,9 @@ int zmk_endpoint_instance_to_str(struct zmk_endpoint_instance endpoint, char *st
     case ZMK_TRANSPORT_BLE:
         return snprintf(str, len, "BLE:%d", endpoint.ble.profile_index);
 
+    case ZMK_TRANSPORT_I2C_HID:
+        return snprintf(str, len, "I2C_HID");
+
     default:
         return snprintf(str, len, "Invalid");
     }
@@ -80,6 +96,7 @@ int zmk_endpoint_instance_to_str(struct zmk_endpoint_instance endpoint, char *st
 
 #define INSTANCE_INDEX_OFFSET_USB 0
 #define INSTANCE_INDEX_OFFSET_BLE ZMK_ENDPOINT_USB_COUNT
+#define INSTANCE_INDEX_OFFSET_I2C_HID (ZMK_ENDPOINT_USB_COUNT + ZMK_ENDPOINT_BLE_COUNT)
 
 int zmk_endpoint_instance_to_index(struct zmk_endpoint_instance endpoint) {
     switch (endpoint.transport) {
@@ -88,6 +105,9 @@ int zmk_endpoint_instance_to_index(struct zmk_endpoint_instance endpoint) {
 
     case ZMK_TRANSPORT_BLE:
         return INSTANCE_INDEX_OFFSET_BLE + endpoint.ble.profile_index;
+
+    case ZMK_TRANSPORT_I2C_HID:
+        return INSTANCE_INDEX_OFFSET_I2C_HID;
     }
 
     LOG_ERR("Invalid transport %d", endpoint.transport);
@@ -146,6 +166,19 @@ static int send_keyboard_report(void) {
         return -ENOTSUP;
 #endif /* IS_ENABLED(CONFIG_ZMK_BLE) */
     }
+
+    case ZMK_TRANSPORT_I2C_HID: {
+#if IS_ENABLED(CONFIG_I2C_HID_TARGET)
+        int err = zmk_i2c_hid_send_keyboard_report();
+        if (err) {
+            LOG_ERR("FAILED TO SEND OVER I2C HID: %d", err);
+        }
+        return err;
+#else
+        LOG_ERR("I2C HID endpoint is not supported");
+        return -ENOTSUP;
+#endif /* IS_ENABLED(CONFIG_I2C_HID_TARGET) */
+    }
     }
 
     LOG_ERR("Unhandled endpoint transport %d", current_instance.transport);
@@ -179,6 +212,19 @@ static int send_consumer_report(void) {
         LOG_ERR("BLE HOG endpoint is not supported");
         return -ENOTSUP;
 #endif /* IS_ENABLED(CONFIG_ZMK_BLE) */
+    }
+
+    case ZMK_TRANSPORT_I2C_HID: {
+#if IS_ENABLED(CONFIG_I2C_HID_TARGET)
+        int err = zmk_i2c_hid_send_consumer_report();
+        if (err) {
+            LOG_ERR("FAILED TO SEND OVER I2C HID: %d", err);
+        }
+        return err;
+#else
+        LOG_ERR("I2C HID endpoint is not supported");
+        return -ENOTSUP;
+#endif /* IS_ENABLED(CONFIG_I2C_HID_TARGET) */
     }
     }
 
@@ -229,6 +275,19 @@ int zmk_endpoints_send_mouse_report() {
         LOG_ERR("BLE HOG endpoint is not supported");
         return -ENOTSUP;
 #endif /* IS_ENABLED(CONFIG_ZMK_BLE) */
+    }
+
+    case ZMK_TRANSPORT_I2C_HID: {
+#if IS_ENABLED(CONFIG_I2C_HID_TARGET)
+        int err = zmk_i2c_hid_send_mouse_report();
+        if (err) {
+            LOG_ERR("FAILED TO SEND OVER I2C HID: %d", err);
+        }
+        return err;
+#else
+        LOG_ERR("I2C HID endpoint is not supported");
+        return -ENOTSUP;
+#endif /* IS_ENABLED(CONFIG_I2C_HID_TARGET) */
     }
     }
 
@@ -281,6 +340,14 @@ static bool is_ble_ready(void) {
 #endif
 }
 
+static bool is_i2c_hid_ready(void) {
+#if IS_ENABLED(CONFIG_I2C_HID_TARGET)
+    return true;
+#else
+    return false;
+#endif
+}
+
 static enum zmk_transport get_selected_transport(void) {
     if (is_ble_ready()) {
         if (is_usb_ready()) {
@@ -295,6 +362,11 @@ static enum zmk_transport get_selected_transport(void) {
     if (is_usb_ready()) {
         LOG_DBG("Only USB is ready.");
         return ZMK_TRANSPORT_USB;
+    }
+
+    if (is_i2c_hid_ready()) {
+        LOG_DBG("Only I2C HID is ready.");
+        return ZMK_TRANSPORT_I2C_HID;
     }
 
     LOG_DBG("No endpoint transports are ready.");

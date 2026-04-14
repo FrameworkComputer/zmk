@@ -26,6 +26,12 @@
 #define ZMK_ENDPOINT_BLE_COUNT 0
 #endif
 
+#ifdef CONFIG_I2C_HID_TARGET
+#define ZMK_ENDPOINT_I2C_HID_COUNT 1
+#else
+#define ZMK_ENDPOINT_I2C_HID_COUNT 0
+#endif
+
 /**
  * The total number of different (struct zmk_endpoint_instance) values that can
  * be selected.
@@ -33,7 +39,8 @@
  * Note that this value may change between firmware versions, so it should not
  * be used in any persistent storage.
  */
-#define ZMK_ENDPOINT_COUNT (ZMK_ENDPOINT_USB_COUNT + ZMK_ENDPOINT_BLE_COUNT)
+#define ZMK_ENDPOINT_COUNT                                                                         \
+    (ZMK_ENDPOINT_USB_COUNT + ZMK_ENDPOINT_BLE_COUNT + ZMK_ENDPOINT_I2C_HID_COUNT)
 
 bool zmk_endpoint_instance_eq(struct zmk_endpoint_instance a, struct zmk_endpoint_instance b);
 

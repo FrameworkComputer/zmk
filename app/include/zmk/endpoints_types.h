@@ -12,6 +12,7 @@
 enum zmk_transport {
     ZMK_TRANSPORT_USB,
     ZMK_TRANSPORT_BLE,
+    ZMK_TRANSPORT_I2C_HID,
 };
 
 /**
