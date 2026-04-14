@@ -42,4 +42,5 @@ static int dahlia_tp_module_board_init(void)
 	return 0;
 }
 
-SYS_INIT(dahlia_tp_module_board_init, PRE_KERNEL_1, 0);
+/* TODO: enable once bootloader jump is debugged */
+/* SYS_INIT(dahlia_tp_module_board_init, PRE_KERNEL_1, 0); */
