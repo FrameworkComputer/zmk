@@ -220,14 +220,18 @@ static int kscan_matrix_read(const struct device *dev) {
     const struct kscan_matrix_config *config = dev->config;
 
     // Scan the matrix.
+    // Set all outputs to hi-Z (input mode) first to prevent sneak paths
+    // through diodeless membranes where a low-driven inactive column sinks
+    // current from the active column via a held key on the same row.
+    for (int i = 0; i < config->outputs.len; i++) {
+        gpio_pin_configure_dt(&config->outputs.gpios[i].spec, GPIO_INPUT);
+    }
+
     for (int i = 0; i < config->outputs.len; i++) {
         const struct kscan_gpio *out_gpio = &config->outputs.gpios[i];
 
-        int err = gpio_pin_set_dt(&out_gpio->spec, 1);
-        if (err) {
-            LOG_ERR("Failed to set output %i active: %i", out_gpio->index, err);
-            return err;
-        }
+        // Drive this column as output high
+        gpio_pin_configure_dt(&out_gpio->spec, GPIO_OUTPUT_ACTIVE);
 
 #if CONFIG_ZMK_KSCAN_MATRIX_WAIT_BEFORE_INPUTS > 0
         k_busy_wait(CONFIG_ZMK_KSCAN_MATRIX_WAIT_BEFORE_INPUTS);
@@ -248,11 +252,8 @@ static int kscan_matrix_read(const struct device *dev) {
                                 &config->debounce_config);
         }
 
-        err = gpio_pin_set_dt(&out_gpio->spec, 0);
-        if (err) {
-            LOG_ERR("Failed to set output %i inactive: %i", out_gpio->index, err);
-            return err;
-        }
+        // Set back to hi-Z instead of driving low
+        gpio_pin_configure_dt(&out_gpio->spec, GPIO_INPUT);
 
 #if CONFIG_ZMK_KSCAN_MATRIX_WAIT_BETWEEN_OUTPUTS > 0
         k_busy_wait(CONFIG_ZMK_KSCAN_MATRIX_WAIT_BETWEEN_OUTPUTS);
