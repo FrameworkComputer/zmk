@@ -57,7 +57,7 @@
         irq-gpios = <&gpioa 12 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
         vid = <0x32AC>;
         pid = <0x0038>;
-        version-id = <0x0001>;
+        version-id = <0x0002>;
         max-input-length = <11>;
         max-output-length = <4>;
         report-desc-length = <76>;
