@@ -10,11 +10,36 @@
 #include <zephyr/drivers/i2c/target/i2c_hid.h>
 
 #include <zmk/hid.h>
+#include <zmk/endpoints_types.h>
+
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+#include <zmk/hid_indicators.h>
+#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 static const struct device *i2c_hid_dev = DEVICE_DT_GET(DT_NODELABEL(i2c_hid));
+
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+/* Handle output reports from host (e.g. Caps Lock LED state) */
+static void i2c_hid_output_report_cb(const struct device *dev,
+                                     const uint8_t *data, uint16_t len)
+{
+    /* Expected format: [report_id, led_bits] */
+    if (len < 2 || data[0] != ZMK_HID_REPORT_ID_LEDS) {
+        return;
+    }
+
+    struct zmk_hid_led_report_body report = { .leds = data[1] };
+    struct zmk_endpoint_instance endpoint = { .transport = ZMK_TRANSPORT_I2C_HID };
+    zmk_hid_indicators_process_report(&report, endpoint);
+}
+
+static const struct i2c_hid_target_callbacks i2c_hid_callbacks = {
+    .output_report = i2c_hid_output_report_cb,
+};
+#endif
 
 int zmk_i2c_hid_send_keyboard_report(void) {
     struct zmk_hid_keyboard_report *report = zmk_hid_get_keyboard_report();
@@ -68,6 +93,10 @@ static int zmk_i2c_hid_init(void) {
                ret, (unsigned int)sizeof(zmk_hid_report_desc));
         return ret;
     }
+
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+    i2c_hid_target_set_callbacks(i2c_hid_dev, &i2c_hid_callbacks);
+#endif
 
     ret = i2c_target_driver_register(i2c_hid_dev);
     if (ret < 0) {

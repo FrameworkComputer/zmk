@@ -14,6 +14,14 @@
 #include <zephyr/init.h>
 #include <stm32u0xx.h>
 
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+#include <zmk/event_manager.h>
+#include <zmk/events/hid_indicators_changed.h>
+#endif
+
+/* Caps Lock LED bit in the HID LED report (HID 1.11 LED page) */
+#define HID_LED_CAPS_LOCK   (1U << 1)
+
 /* indicator */
 static void blink_caps_led(int count)
 {
@@ -69,3 +77,31 @@ static int dahlia_tp_module_nboot_sel_failsafe(void)
 }
 
 SYS_INIT(dahlia_tp_module_nboot_sel_failsafe, APPLICATION, 99);
+
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+/* Drive the CAPS LED on PC13 from host HID indicator state */
+static int dahlia_tp_module_caps_led_listener(const zmk_event_t *eh)
+{
+	const struct zmk_hid_indicators_changed *ev =
+		as_zmk_hid_indicators_changed(eh);
+	if (!ev) {
+		return 0;
+	}
+
+	/* Ensure GPIOC clock and PC13 are configured (failsafe in case
+	 * the nboot_sel path didn't run on this boot). */
+	RCC->IOPENR |= RCC_IOPENR_GPIOCEN;
+	(void)RCC->IOPENR;
+	GPIOC->MODER = (GPIOC->MODER & ~(3U << (13 * 2))) | (1U << (13 * 2));
+
+	if (ev->indicators & HID_LED_CAPS_LOCK) {
+		GPIOC->BSRR = (1U << 13);
+	} else {
+		GPIOC->BSRR = (1U << (13 + 16));
+	}
+	return 0;
+}
+
+ZMK_LISTENER(dahlia_tp_module_caps_led, dahlia_tp_module_caps_led_listener);
+ZMK_SUBSCRIPTION(dahlia_tp_module_caps_led, zmk_hid_indicators_changed);
+#endif

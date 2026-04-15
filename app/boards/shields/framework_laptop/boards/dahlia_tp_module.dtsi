@@ -60,6 +60,6 @@
         version-id = <0x0002>;
         max-input-length = <11>;
         max-output-length = <4>;
-        report-desc-length = <76>;
+        report-desc-length = <96>;
     };
 };
