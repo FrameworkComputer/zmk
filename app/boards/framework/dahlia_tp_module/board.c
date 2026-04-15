@@ -37,6 +37,18 @@ static void blink_caps_led(int count)
 	}
 }
 
+/* Explicitly prevent Stop mode — clear SLEEPDEEP in SCB SCR.
+ * With SLEEPDEEP=0, WFI enters Sleep mode only (CPU clock gated,
+ * peripherals keep running). This keeps I2C and GPIO responsive
+ * even while the keyboard is idle.
+ */
+static int dahlia_tp_module_prevent_stop_mode(void)
+{
+	SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+	return 0;
+}
+SYS_INIT(dahlia_tp_module_prevent_stop_mode, PRE_KERNEL_1, 0);
+
 static int dahlia_tp_module_nboot_sel_failsafe(void)
 {
 	/* Already cleared? Nothing to do. */
