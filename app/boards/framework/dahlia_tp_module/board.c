@@ -4,14 +4,17 @@
  *
  * Dahlia Touchpad Module init.
  *
- * Failsafe: read nBOOT_SEL option bit on every boot. If set (1),
+ * Failsafe: read nBOOT_SEL option bit on every boot. If set,
  * clear it and reset the chip. This is a one-time operation on
- * factory-fresh units — after clearing, subsequent boots read
+ * fresh units — after clearing, subsequent boots should read
  * nBOOT_SEL=0 and skip the write.
  *
  */
 
 #include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/fatal.h>
+#include <zephyr/sys/atomic.h>
 #include <stm32u0xx.h>
 
 #if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
@@ -22,7 +25,29 @@
 /* Caps Lock LED bit in the HID LED report (HID 1.11 LED page) */
 #define HID_LED_CAPS_LOCK   (1U << 1)
 
-/* indicator */
+/*
+ * Capture fault information, in TAMP backup registers so they are available
+ * to read after a hot reset using SWD.
+ *
+ * Layout (BKP0R..BKP8R, 9 x 32-bit):
+ *   BKP0R: magic (0xDEADBEEF when captured; anything else = no fault)
+ *   BKP1R: Zephyr fatal reason code (see zephyr/include/zephyr/fatal_types.h)
+ *   BKP2R: PC at fault
+ *   BKP3R: LR at fault
+ *   BKP4R: xPSR at fault
+ *   BKP5R: R0
+ *   BKP6R: R3
+ *   BKP7R: R12 (IP)
+ *   BKP8R: SCB->ICSR (VECTACTIVE lower 9 bits = which exception fired;
+ *                     HardFault = 3 on Cortex-M0+)
+ *
+ * On next boot, if BKP0R holds the magic, we start a blink thread that
+ * flashes the CAPS LED in a 3-short + 1-long pattern.
+ */
+
+#define DAHLIA_FAULT_MAGIC   0xDEADBEEFu
+
+/* indicator — ~200 ms on, ~200 ms off per cycle at 48 MHz */
 static void blink_caps_led(int count)
 {
 	RCC->IOPENR |= RCC_IOPENR_GPIOCEN;
@@ -31,16 +56,14 @@ static void blink_caps_led(int count)
 
 	for (int i = 0; i < count; i++) {
 		GPIOC->BSRR = (1U << 13);
-		for (volatile int d = 0; d < 120000; d++) {}
+		for (volatile int d = 0; d < 20000; d++) {}
 		GPIOC->BSRR = (1U << (13 + 16));
-		for (volatile int d = 0; d < 120000; d++) {}
+		for (volatile int d = 0; d < 20000; d++) {}
 	}
 }
 
 /* Explicitly prevent Stop mode — clear SLEEPDEEP in SCB SCR.
- * With SLEEPDEEP=0, WFI enters Sleep mode only (CPU clock gated,
- * peripherals keep running). This keeps I2C and GPIO responsive
- * even while the keyboard is idle.
+ * With SLEEPDEEP=0, it keeps I2C and GPIO responsive.
  */
 static int dahlia_tp_module_prevent_stop_mode(void)
 {
@@ -58,47 +81,158 @@ static int dahlia_tp_module_nboot_sel_failsafe(void)
 	/* Blink CAPS LED to signal option byte write is happening */
 	blink_caps_led(3);
 
+	/* Disable interrupts — the unlock sequences require two
+	 * back-to-back writes with nothing in between. */
+	unsigned int key = irq_lock();
+
 	/* Wait for flash idle */
 	while (FLASH->SR & FLASH_SR_BSY1) {}
+
+	/* Clear any stale error flags */
+	FLASH->SR = FLASH->SR;
 
 	/* Unlock flash */
 	FLASH->KEYR = 0x45670123;
 	FLASH->KEYR = 0xCDEF89AB;
 
+	if (FLASH->CR & FLASH_CR_LOCK) {
+		/* Unlock failed — blink 5 short */
+		irq_unlock(key);
+		blink_caps_led(5);
+		return -1;
+	}
+
 	/* Unlock option bytes */
 	FLASH->OPTKEYR = 0x08192A3B;
 	FLASH->OPTKEYR = 0x4C5D6E7F;
+
+	if (FLASH->CR & FLASH_CR_OPTLOCK) {
+		/* OB unlock failed — blink 7 short */
+		irq_unlock(key);
+		blink_caps_led(7);
+		return -1;
+	}
 
 	/* Clear nBOOT_SEL (bit 24) in OPTR */
 	FLASH->OPTR &= ~FLASH_OPTR_nBOOT_SEL;
 
 	/* Start option byte programming */
-	FLASH->CR |= FLASH_CR_OPTSTRT;
+	SET_BIT(FLASH->CR, FLASH_CR_OPTSTRT);
 	while (FLASH->SR & FLASH_SR_BSY1) {}
+	CLEAR_BIT(FLASH->CR, FLASH_CR_OPTSTRT);
 
-	/* Trigger option byte reload — resets the chip */
-	FLASH->CR |= FLASH_CR_OBL_LAUNCH;
+	/* Re-lock flash */
+	SET_BIT(FLASH->CR, FLASH_CR_LOCK);
 
-	/* Should never reach here — rapidly blink LED if OBL_LAUNCH failed */
-	while (1) {
-		GPIOC->BSRR = (1U << 13);
-		for (volatile int d = 0; d < 25000; d++) {}
-		GPIOC->BSRR = (1U << (13 + 16));
-		for (volatile int d = 0; d < 25000; d++) {}
-	}
+	irq_unlock(key);
+
+	/* The hardware registers are updated on next boot */
+	return 0;
 }
 
 SYS_INIT(dahlia_tp_module_nboot_sel_failsafe, APPLICATION, 99);
+
+/* Non-zero while a captured fault is being signaled on the LED. */
+static atomic_t dahlia_tp_module_fault_present = ATOMIC_INIT(0);
+
+/* Enable backup-domain write protection, required by TAMP backup registers.*/
+static void dahlia_tp_module_backup_enable_access(void)
+{
+	RCC->APBENR1 |= RCC_APBENR1_PWREN | RCC_APBENR1_RTCAPBEN;
+	(void)RCC->APBENR1;
+	PWR->CR1 |= PWR_CR1_DBP;
+	(void)PWR->CR1;
+}
+
+/* Strong override of Zephyr's weak fatal error handler. Runs in handler mode
+ * (IRQs disabled below). We only touch registers — no stack allocation, no
+ * library calls — to minimize risk of faulting again inside the handler. */
+void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+{
+	__disable_irq();
+	dahlia_tp_module_backup_enable_access();
+
+	uint32_t pc = 0, lr = 0, xpsr = 0, r0 = 0, r3 = 0, r12 = 0;
+	if (esf) {
+		pc = esf->basic.pc;
+		lr = esf->basic.lr;
+		xpsr = esf->basic.xpsr;
+		r0 = esf->basic.r0;
+		r3 = esf->basic.r3;
+		r12 = esf->basic.r12;
+	}
+
+	TAMP->BKP1R = reason;
+	TAMP->BKP2R = pc;
+	TAMP->BKP3R = lr;
+	TAMP->BKP4R = xpsr;
+	TAMP->BKP5R = r0;
+	TAMP->BKP6R = r3;
+	TAMP->BKP7R = r12;
+	TAMP->BKP8R = SCB->ICSR;
+	/* Write magic last — without it the magic is ignored on next boot. */
+	TAMP->BKP0R = DAHLIA_FAULT_MAGIC;
+
+	__DSB();
+	NVIC_SystemReset();
+	for (;;) {}
+}
+
+/* Blink pattern: 3 short pulses, pause, 1 long pulse, pause */
+static void dahlia_tp_module_fault_blink_fn(void *a, void *b, void *c)
+{
+	ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
+
+	RCC->IOPENR |= RCC_IOPENR_GPIOCEN;
+	(void)RCC->IOPENR;
+	GPIOC->MODER = (GPIOC->MODER & ~(3U << (13 * 2))) | (1U << (13 * 2));
+
+	while (atomic_get(&dahlia_tp_module_fault_present)) {
+		for (int i = 0; i < 3; i++) {
+			GPIOC->BSRR = (1U << 13);
+			k_msleep(120);
+			GPIOC->BSRR = (1U << (13 + 16));
+			k_msleep(120);
+		}
+		k_msleep(300);
+		GPIOC->BSRR = (1U << 13);
+		k_msleep(600);
+		GPIOC->BSRR = (1U << (13 + 16));
+		k_msleep(900);
+	}
+}
+
+K_THREAD_STACK_DEFINE(dahlia_tp_module_fault_blink_stack, 512);
+static struct k_thread dahlia_tp_module_fault_blink_tcb;
+
+/* Check backup regs on boot for captured fault, and kick off the blink thread
+ * if one is present. Runs at APPLICATION/50 so the kernel is fully up and
+ * k_msleep works from the spawned thread. */
+static int dahlia_tp_module_fault_check(void) {
+	dahlia_tp_module_backup_enable_access();
+	if (TAMP->BKP0R == DAHLIA_FAULT_MAGIC) {
+		atomic_set(&dahlia_tp_module_fault_present, 1);
+		k_thread_create(&dahlia_tp_module_fault_blink_tcb,
+				dahlia_tp_module_fault_blink_stack,
+				K_THREAD_STACK_SIZEOF(dahlia_tp_module_fault_blink_stack),
+				dahlia_tp_module_fault_blink_fn,
+				NULL, NULL, NULL,
+				K_PRIO_PREEMPT(7), 0, K_NO_WAIT);
+	}
+	return 0;
+}
+SYS_INIT(dahlia_tp_module_fault_check, APPLICATION, 50);
 
 #if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
 /* Drive the CAPS LED on PC13 from host HID indicator state */
 static int dahlia_tp_module_caps_led_listener(const zmk_event_t *eh)
 {
-	const struct zmk_hid_indicators_changed *ev =
-		as_zmk_hid_indicators_changed(eh);
-	if (!ev) {
-		return 0;
-	}
+	/* Fault blink owns the LED — don't fight it. */
+	if (atomic_get(&dahlia_tp_module_fault_present)) return 0;
+
+	const struct zmk_hid_indicators_changed *ev = as_zmk_hid_indicators_changed(eh);
+
+	if (!ev) return 0;
 
 	/* Ensure GPIOC clock and PC13 are configured (failsafe in case
 	 * the nboot_sel path didn't run on this boot). */
