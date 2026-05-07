@@ -1,0 +1,12 @@
+# I2C IT8801 GPIO expander emulation target
+
+# Copyright (c) 2026
+# SPDX-License-Identifier: Apache-2.0
+
+config I2C_IT8801_TARGET
+	bool "I2C IT8801 GPIO expander emulation target"
+	depends on GPIO
+	help
+	  Emulates a subset of the ITE IT8801 I/O expander register map
+	  as an I2C target device. Allows a host EC with an IT8801 driver
+	  to control GPIO pins on this device.

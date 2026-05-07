@@ -2,3 +2,4 @@
 # SPDX-License-Identifier: Apache-2.0
 
 rsource "target/Kconfig.i2c_hid"
+rsource "target/Kconfig.i2c_it8801"
