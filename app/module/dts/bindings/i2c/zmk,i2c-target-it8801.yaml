@@ -1,18 +1,26 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-  IT8801 GPIO expander emulation over I2C target.
-  Emulates a subset of the ITE IT8801 register map so that a host EC
-  with an existing IT8801 driver can control GPIOs on this device.
+  IT8801 register emulation over I2C target.
+  Emulates the subset of the ITE IT8801 register interface that the EC's
+  stock IT8801 ioexpander driver needs (vendor ID, SOVR for 3 ports, CR,
+  and KSO/KSI stubs). Board code receives a callback on SOVR bit
+  transitions and decides what each bit does physically.
 
 compatible: "zmk,i2c-target-it8801"
 
 include: i2c-device.yaml
 
 properties:
-  gpios:
-    type: phandle-array
-    required: true
-    description: |
-      GPIO pins exposed as IT8801 port 0 outputs, bit 0 first.
-      Up to 8 pins. Directly mapped to SOVR(0) bit positions.
+  sovr0-init:
+    type: int
+    default: 0xFF
+    description: Initial value of SOVR(0) shadow (host reads this at init).
+  sovr1-init:
+    type: int
+    default: 0xFF
+    description: Initial value of SOVR(1) shadow.
+  sovr2-init:
+    type: int
+    default: 0xFF
+    description: Initial value of SOVR(2) shadow.

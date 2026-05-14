@@ -15,12 +15,35 @@
 #include <zephyr/kernel.h>
 #include <zephyr/fatal.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/drivers/kscan.h>
 #include <stm32u0xx.h>
 
-#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+#include "../../../module/drivers/i2c/target/i2c_it8801_target.h"
+
 #include <zmk/event_manager.h>
+#include <zmk/events/keycode_state_changed.h>
+#include <zmk/keymap.h>
+#include <zmk/hid.h>
+#include <dt-bindings/zmk/hid_usage_pages.h>
+#include <dt-bindings/zmk/hid_usage.h>
+
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
 #include <zmk/events/hid_indicators_changed.h>
 #endif
+
+/* HID modifier byte: bit 2 = Left Alt */
+#define HID_MOD_LALT  (1U << 2)
+/* FN layer index in the keymap (matches #define FN 1 in ansi-keymap.dtsi) */
+#define FN_LAYER_ID   1
+
+/*
+ * IT8801 SOVR(0) bit assignments. Bit 0 = TP_EN matches the dahlia
+ * IT8801 emulation spec (dahlia-it8801-emulation.md) so the EC's stock
+ * IT8801 driver works without modification. Bit 1 (kb scan enable) is
+ * a Dahlia-specific extension — the EC must opt in to use it.
+ */
+#define IOEX_TP_EN_PIN    0   /* port 0, bit 0: touchpad enable (PA15) — spec */
+#define IOEX_KB_SCAN_PIN  1   /* port 0, bit 1: keyboard scan enable — extension */
 
 /* Caps Lock LED bit in the HID LED report (HID 1.11 LED page) */
 #define HID_LED_CAPS_LOCK   (1U << 1)
@@ -228,14 +251,16 @@ SYS_INIT(dahlia_tp_module_fault_check, APPLICATION, 50);
 static int dahlia_tp_module_caps_led_listener(const zmk_event_t *eh)
 {
 	/* Fault blink owns the LED — don't fight it. */
-	if (atomic_get(&dahlia_tp_module_fault_present)) return 0;
+	if (atomic_get(&dahlia_tp_module_fault_present)) {
+		return 0;
+	}
 
-	const struct zmk_hid_indicators_changed *ev = as_zmk_hid_indicators_changed(eh);
+	const struct zmk_hid_indicators_changed *ev =
+		as_zmk_hid_indicators_changed(eh);
+	if (!ev) {
+		return 0;
+	}
 
-	if (!ev) return 0;
-
-	/* Ensure GPIOC clock and PC13 are configured (failsafe in case
-	 * the nboot_sel path didn't run on this boot). */
 	RCC->IOPENR |= RCC_IOPENR_GPIOCEN;
 	(void)RCC->IOPENR;
 	GPIOC->MODER = (GPIOC->MODER & ~(3U << (13 * 2))) | (1U << (13 * 2));
@@ -251,3 +276,123 @@ static int dahlia_tp_module_caps_led_listener(const zmk_event_t *eh)
 ZMK_LISTENER(dahlia_tp_module_caps_led, dahlia_tp_module_caps_led_listener);
 ZMK_SUBSCRIPTION(dahlia_tp_module_caps_led, zmk_hid_indicators_changed);
 #endif
+
+static bool dahlia_tp_en_state = true;
+
+/*
+ * Single source of truth for "is the input deck enabled".
+ *   true  → keyboard scans + touchpad enabled (PA15 high)
+ *   false → keyboard scans dropped + touchpad disabled (PA15 low)
+ *
+ * The deghost driver calls the weak hook below before forwarding any
+ * matrix event; we override it to return this flag.
+ */
+static volatile bool dahlia_inputdeck_enabled = true;
+
+bool kscan_deghost_input_enabled(void)
+{
+	return dahlia_inputdeck_enabled;
+}
+
+static void dahlia_tp_module_set_tp_en(bool on)
+{
+	RCC->IOPENR |= RCC_IOPENR_GPIOAEN;
+	(void)RCC->IOPENR;
+
+	/* PA15: output, no pulls */
+	GPIOA->PUPDR &= ~(3U << (15 * 2));
+	GPIOA->MODER = (GPIOA->MODER & ~(3U << (15 * 2))) | (1U << (15 * 2));
+	GPIOA->BSRR = on ? (1U << 15) : (1U << (15 + 16));
+
+	dahlia_tp_en_state = on;
+}
+
+static void dahlia_inputdeck_set(bool on)
+{
+	dahlia_inputdeck_enabled = on;
+}
+
+static int dahlia_tp_module_force_tp_en_high(void)
+{
+	dahlia_tp_module_set_tp_en(true);
+	return 0;
+}
+SYS_INIT(dahlia_tp_module_force_tp_en_high, PRE_KERNEL_1, 0);
+
+/* Fn + LAlt + T: toggle TP_EN only (does not affect keyboard scanning). */
+static int dahlia_tp_module_shortcut_listener(const zmk_event_t *eh)
+{
+	const struct zmk_keycode_state_changed *ev =
+		as_zmk_keycode_state_changed(eh);
+	if (!ev) {
+		return 0;
+	}
+	if (!ev->state ||
+	    ev->usage_page != HID_USAGE_KEY ||
+	    ev->keycode != HID_USAGE_KEY_KEYBOARD_T) {
+		return 0;
+	}
+	if (!zmk_keymap_layer_active(FN_LAYER_ID)) {
+		return 0;
+	}
+	if (!(zmk_hid_get_explicit_mods() & HID_MOD_LALT)) {
+		return 0;
+	}
+
+	dahlia_tp_module_set_tp_en(!dahlia_tp_en_state);
+	return 0;
+}
+
+ZMK_LISTENER(dahlia_tp_module_shortcut, dahlia_tp_module_shortcut_listener);
+ZMK_SUBSCRIPTION(dahlia_tp_module_shortcut, zmk_keycode_state_changed);
+
+/*
+ * EC writes to SOVR(0). Each bit has its own meaning:
+ *   bit 0 → keyboard scan enable (gates deghost forwarding)
+ *   bit 1 → touchpad enable      (drives PA15)
+ * Other bits and other ports are ignored.
+ */
+static void dahlia_tp_module_on_ioex_change(const struct device *dev,
+					    uint8_t port, uint8_t pin,
+					    bool level)
+{
+	ARG_UNUSED(dev);
+	if (port != 0) {
+		return;
+	}
+	switch (pin) {
+	case IOEX_KB_SCAN_PIN: {
+		dahlia_inputdeck_set(level);
+
+		/* Also stop the matrix polling so we don't burn CPU/GPIO power
+		 * while disabled. The weak hook in deghost is still in place
+		 * as a safety net for any in-flight event. */
+		const struct device *kscan =
+			DEVICE_DT_GET(DT_CHOSEN(zmk_kscan));
+		if (device_is_ready(kscan)) {
+			if (level) {
+				kscan_enable_callback(kscan);
+			} else {
+				kscan_disable_callback(kscan);
+			}
+		}
+		break;
+	}
+	case IOEX_TP_EN_PIN:
+		dahlia_tp_module_set_tp_en(level);
+		break;
+	default:
+		break;
+	}
+}
+
+static int dahlia_tp_module_register_ioex_cb(void)
+{
+	const struct device *ioex = DEVICE_DT_GET(DT_NODELABEL(i2c_ioex));
+	if (!device_is_ready(ioex)) {
+		return -ENODEV;
+	}
+	it8801_target_set_callback(ioex, dahlia_tp_module_on_ioex_change);
+	return 0;
+}
+SYS_INIT(dahlia_tp_module_register_ioex_cb, APPLICATION, 90);

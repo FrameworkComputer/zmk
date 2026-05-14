@@ -3,18 +3,24 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * IT8801 GPIO expander emulation — I2C target side.
+ * IT8801 register emulation — I2C target side.
  *
- * Emulates a minimal subset of the ITE IT8801 register map so a host
- * EC running the standard IT8801 ioexpander driver can read/write
- * GPIOs on this device.
+ * Emulates the subset of the ITE IT8801 register interface that the EC's
+ * stock IT8801 ioexpander driver requires for init and GPIO operations.
+ * The emulator is a pure register store; it does NOT drive any physical
+ * GPIO itself. Board code registers a callback and decides what each
+ * SOVR bit actually does on this board.
  *
- * Only port 0 is implemented.  The register set covers:
- *   - IPSR(0) at 0x00  — read pin states
- *   - SOVR(0) at 0x05  — read/write output values
- *   - CR(0,x) at 0x0A‥0x11 — per-pin control (direction, flags)
- *   - LBVIDR  at 0xFE  — vendor ID low  (0x83)
- *   - HBVIDR  at 0xFF  — vendor ID high (0x12)
+ * Registers implemented:
+ *   - LBVIDR (0xFE)            : vendor ID low  (0x83)
+ *   - HBVIDR (0xFF)            : vendor ID high (0x12)
+ *   - SOVR(0..2)  (0x05..0x07) : output value shadow, R/W, callback on
+ *                                bit transitions
+ *   - IPSR(0..2)  (0x00..0x02) : input pin status, returns 0
+ *   - CR(p, n)    (0x0A..0x29) : pin control, writes accepted and ignored,
+ *                                reads return 0
+ *   - KSO/KSI/GISR/SMBCR/GIECR : accept writes, return 0 on read
+ *   - Any other reg            : accept writes, return 0 on read
  */
 
 #define DT_DRV_COMPAT zmk_i2c_target_it8801
@@ -22,115 +28,92 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
-#include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
+
+#include "i2c_it8801_target.h"
 
 LOG_MODULE_REGISTER(i2c_it8801_target, CONFIG_I2C_LOG_LEVEL);
 
-/* IT8801 register addresses (port 0 only) */
-#define REG_IPSR0        0x00   /* input pin status */
-#define REG_SOVR0        0x05   /* set output value */
-#define REG_CR_BASE      0x0A   /* control regs: 0x0A + bit_pos */
-#define REG_CR_END       0x11   /* 0x0A + 7 */
-#define REG_LBVIDR       0xFE   /* vendor ID low */
-#define REG_HBVIDR       0xFF   /* vendor ID high */
+#define REG_IPSR_BASE   0x00  /* 0x00..0x02 */
+#define REG_SOVR_BASE   0x05  /* 0x05..0x07 */
+#define REG_CR_BASE     0x0A  /* 0x0A..0x29 (3 ports × 8 pins) */
+#define REG_CR_END      0x29
+#define REG_LBVIDR      0xFE
+#define REG_HBVIDR      0xFF
 
-/* Vendor ID that the EC driver checks */
 #define IT8801_VENDOR_LO 0x83
 #define IT8801_VENDOR_HI 0x12
 
-/* CR bit fields */
-#define CR_GPIODIR       BIT(5) /* 1 = output */
-
-#define MAX_GPIOS 8
+#define NUM_PORTS 3
 
 struct it8801_target_config {
 	struct i2c_dt_spec bus;
-	const struct gpio_dt_spec *gpios;
-	uint8_t ngpios;
+	uint8_t sovr_init[NUM_PORTS];
 };
 
 struct it8801_target_data {
 	struct i2c_target_config i2c_cfg;
 	const struct device *dev;
-	uint8_t reg_addr;      /* register address from first write byte */
+	uint8_t reg_addr;
 	bool reg_addr_valid;
-	uint8_t sovr;          /* shadow output register */
-	uint8_t cr[MAX_GPIOS]; /* shadow control registers */
+	uint8_t sovr[NUM_PORTS];
+	it8801_target_change_cb_t change_cb;
 };
 
-/* ---------- GPIO helpers ------------------------------------------- */
-
-static void apply_sovr(const struct device *dev)
+void it8801_target_set_callback(const struct device *dev,
+				it8801_target_change_cb_t cb)
 {
-	const struct it8801_target_config *cfg = dev->config;
 	struct it8801_target_data *data = dev->data;
-
-	for (int i = 0; i < cfg->ngpios; i++) {
-		if (data->cr[i] & CR_GPIODIR) {
-			gpio_pin_set_dt(&cfg->gpios[i],
-					(data->sovr >> i) & 1);
-		}
-	}
+	data->change_cb = cb;
 }
 
-static uint8_t read_ipsr(const struct device *dev)
+uint8_t it8801_target_get_sovr(const struct device *dev, uint8_t port)
 {
-	const struct it8801_target_config *cfg = dev->config;
-	uint8_t val = 0;
-
-	for (int i = 0; i < cfg->ngpios; i++) {
-		if (gpio_pin_get_dt(&cfg->gpios[i])) {
-			val |= BIT(i);
-		}
-	}
-	return val;
+	struct it8801_target_data *data = dev->data;
+	return port < NUM_PORTS ? data->sovr[port] : 0;
 }
+
+/* ---------- register read/write ------------------------------------ */
 
 static uint8_t reg_read(const struct device *dev, uint8_t reg)
 {
 	struct it8801_target_data *data = dev->data;
 
-	if (reg == REG_IPSR0) {
-		return read_ipsr(dev);
-	} else if (reg == REG_SOVR0) {
-		return data->sovr;
-	} else if (reg >= REG_CR_BASE && reg <= REG_CR_END) {
-		return data->cr[reg - REG_CR_BASE];
-	} else if (reg == REG_LBVIDR) {
+	if (reg >= REG_SOVR_BASE && reg < REG_SOVR_BASE + NUM_PORTS) {
+		return data->sovr[reg - REG_SOVR_BASE];
+	}
+	if (reg == REG_LBVIDR) {
 		return IT8801_VENDOR_LO;
-	} else if (reg == REG_HBVIDR) {
+	}
+	if (reg == REG_HBVIDR) {
 		return IT8801_VENDOR_HI;
 	}
-	/* Unimplemented registers read as 0 */
+	/* IPSR, CR, KSO/KSI/etc, and unhandled regs: return 0. */
 	return 0x00;
 }
 
 static void reg_write(const struct device *dev, uint8_t reg, uint8_t val)
 {
 	struct it8801_target_data *data = dev->data;
-	const struct it8801_target_config *cfg = dev->config;
 
-	if (reg == REG_SOVR0) {
-		data->sovr = val;
-		apply_sovr(dev);
-	} else if (reg >= REG_CR_BASE && reg <= REG_CR_END) {
-		uint8_t pin = reg - REG_CR_BASE;
-		data->cr[pin] = val;
-		if (pin < cfg->ngpios) {
-			gpio_flags_t flags;
-			if (val & CR_GPIODIR) {
-				flags = GPIO_OUTPUT;
-				flags |= (data->sovr & BIT(pin))
-					 ? GPIO_OUTPUT_HIGH
-					 : GPIO_OUTPUT_LOW;
-			} else {
-				flags = GPIO_INPUT;
+	if (reg >= REG_SOVR_BASE && reg < REG_SOVR_BASE + NUM_PORTS) {
+		uint8_t port = reg - REG_SOVR_BASE;
+		uint8_t old = data->sovr[port];
+		uint8_t changed = old ^ val;
+
+		data->sovr[port] = val;
+
+		if (data->change_cb && changed) {
+			for (uint8_t pin = 0; pin < 8; pin++) {
+				if (changed & BIT(pin)) {
+					data->change_cb(dev, port, pin,
+							!!(val & BIT(pin)));
+				}
 			}
-			gpio_pin_configure_dt(&cfg->gpios[pin], flags);
 		}
+		return;
 	}
-	/* Writes to read-only or unimplemented registers are silently ignored */
+	/* CR and all other registers: accept silently. */
 }
 
 /* ---------- I2C target callbacks ----------------------------------- */
@@ -139,7 +122,6 @@ static int cb_write_requested(struct i2c_target_config *config)
 {
 	struct it8801_target_data *data =
 		CONTAINER_OF(config, struct it8801_target_data, i2c_cfg);
-
 	data->reg_addr_valid = false;
 	return 0;
 }
@@ -150,11 +132,9 @@ static int cb_write_received(struct i2c_target_config *config, uint8_t val)
 		CONTAINER_OF(config, struct it8801_target_data, i2c_cfg);
 
 	if (!data->reg_addr_valid) {
-		/* First byte is always the register address */
 		data->reg_addr = val;
 		data->reg_addr_valid = true;
 	} else {
-		/* Subsequent bytes are data */
 		reg_write(data->dev, data->reg_addr, val);
 		data->reg_addr++;
 	}
@@ -166,12 +146,7 @@ static int cb_read_requested(struct i2c_target_config *config, uint8_t *val)
 	struct it8801_target_data *data =
 		CONTAINER_OF(config, struct it8801_target_data, i2c_cfg);
 
-	if (!data->reg_addr_valid) {
-		*val = 0x00;
-		return 0;
-	}
-
-	*val = reg_read(data->dev, data->reg_addr);
+	*val = data->reg_addr_valid ? reg_read(data->dev, data->reg_addr) : 0;
 	return 0;
 }
 
@@ -187,7 +162,6 @@ static int cb_read_processed(struct i2c_target_config *config, uint8_t *val)
 
 static int cb_stop(struct i2c_target_config *config)
 {
-	/* Nothing to do on STOP */
 	return 0;
 }
 
@@ -207,19 +181,12 @@ static int it8801_target_init(const struct device *dev)
 	struct it8801_target_data *data = dev->data;
 
 	data->dev = dev;
-
-	if (!device_is_ready(cfg->bus.bus)) {
-		LOG_ERR("I2C bus not ready");
-		return -ENODEV;
+	for (int p = 0; p < NUM_PORTS; p++) {
+		data->sovr[p] = cfg->sovr_init[p];
 	}
 
-	/* Configure all listed GPIOs as inputs initially */
-	for (int i = 0; i < cfg->ngpios; i++) {
-		if (!gpio_is_ready_dt(&cfg->gpios[i])) {
-			LOG_ERR("GPIO %d not ready", i);
-			return -ENODEV;
-		}
-		gpio_pin_configure_dt(&cfg->gpios[i], GPIO_INPUT);
+	if (!device_is_ready(cfg->bus.bus)) {
+		return -ENODEV;
 	}
 
 	data->i2c_cfg.address = cfg->bus.addr;
@@ -227,42 +194,24 @@ static int it8801_target_init(const struct device *dev)
 
 	int ret = i2c_target_register(cfg->bus.bus, &data->i2c_cfg);
 	if (ret) {
-		LOG_ERR("Failed to register I2C target: %d", ret);
+		LOG_ERR("i2c_target_register failed: %d", ret);
 		return ret;
 	}
 
-	LOG_INF("IT8801 emulation at 0x%02x, %d GPIOs",
-		cfg->bus.addr, cfg->ngpios);
+	LOG_INF("IT8801 emulation at 0x%02x", cfg->bus.addr);
 	return 0;
 }
 
-/* ---------- device instantiation ----------------------------------- */
-
-#define GPIO_DT_SPEC_BY_IDX(inst, idx) \
-	GPIO_DT_SPEC_GET_BY_IDX(DT_DRV_INST(inst), gpios, idx)
-
-#define IT8801_GPIO_SPEC(inst, idx) \
-	COND_CODE_1(DT_INST_PROP_HAS_IDX(inst, gpios, idx), \
-		(GPIO_DT_SPEC_BY_IDX(inst, idx),), ())
-
 #define IT8801_TARGET_INIT(inst)                                               \
-	static const struct gpio_dt_spec it8801_gpios_##inst[] = {             \
-		IT8801_GPIO_SPEC(inst, 0)                                      \
-		IT8801_GPIO_SPEC(inst, 1)                                      \
-		IT8801_GPIO_SPEC(inst, 2)                                      \
-		IT8801_GPIO_SPEC(inst, 3)                                      \
-		IT8801_GPIO_SPEC(inst, 4)                                      \
-		IT8801_GPIO_SPEC(inst, 5)                                      \
-		IT8801_GPIO_SPEC(inst, 6)                                      \
-		IT8801_GPIO_SPEC(inst, 7)                                      \
-	};                                                                     \
-                                                                               \
 	static struct it8801_target_data it8801_data_##inst;                   \
                                                                                \
 	static const struct it8801_target_config it8801_cfg_##inst = {         \
 		.bus = I2C_DT_SPEC_INST_GET(inst),                             \
-		.gpios = it8801_gpios_##inst,                                  \
-		.ngpios = ARRAY_SIZE(it8801_gpios_##inst),                     \
+		.sovr_init = {                                                 \
+			DT_INST_PROP_OR(inst, sovr0_init, 0xFF),               \
+			DT_INST_PROP_OR(inst, sovr1_init, 0xFF),               \
+			DT_INST_PROP_OR(inst, sovr2_init, 0xFF),               \
+		},                                                             \
 	};                                                                     \
                                                                                \
 	DEVICE_DT_INST_DEFINE(inst,                                            \

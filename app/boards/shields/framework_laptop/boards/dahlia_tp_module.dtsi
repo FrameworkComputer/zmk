@@ -64,12 +64,15 @@
     };
 
     /*
-     * IT8801 GPIO expander emulation at address 0x38.
-     * Exposes PA15 (TP_EN / lid pin) as port 0 bit 0.
+     * IT8801 register emulation at I2C 0x38.
+     * SOVR(0) bit 0 = touchpad enable / TP_EN (drives PA15)  — per spec
+     * SOVR(0) bit 1 = keyboard scan enable                    — extension
+     * Initial value 0xFF means "everything enabled" — the EC reads
+     * this at init.
      */
     i2c_ioex: it8801-emu@38 {
         compatible = "zmk,i2c-target-it8801";
         reg = <0x38>;
-        gpios = <&gpioa 15 GPIO_ACTIVE_HIGH>;
+        sovr0-init = <0xFF>;
     };
 };

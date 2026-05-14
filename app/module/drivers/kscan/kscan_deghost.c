@@ -9,9 +9,17 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/kscan.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/toolchain.h>
 #include <dt-bindings/zmk/matrix_transform.h>
 #include <zmk/matrix.h>
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+
+/* Weak hook: board code can override this to gate key event forwarding
+ * (e.g., to disable the input deck in tablet mode). Default = always on. */
+__weak bool kscan_deghost_input_enabled(void)
+{
+    return true;
+}
 
 struct kscan_deghost_config {
     const struct device *child_kscan;
@@ -66,6 +74,8 @@ static void kscan_deghost_callback_for_child(const struct device *deghost_dev, u
                                              uint32_t col, bool pressed) {
     const struct kscan_deghost_config *config = deghost_dev->config;
     struct kscan_deghost_data *data = deghost_dev->data;
+    if (!kscan_deghost_input_enabled())
+        return;
     if (!EXISTS(row, col))
         return;
     if (pressed) {
