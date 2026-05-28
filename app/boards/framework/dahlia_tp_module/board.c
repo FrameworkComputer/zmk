@@ -37,13 +37,14 @@
 #define FN_LAYER_ID   1
 
 /*
- * IT8801 SOVR(0) bit assignments. Bit 0 = TP_EN matches the dahlia
- * IT8801 emulation spec (dahlia-it8801-emulation.md) so the EC's stock
- * IT8801 driver works without modification. Bit 1 (kb scan enable) is
- * a Dahlia-specific extension — the EC must opt in to use it.
+ * IT8801 SOVR(2) bit assignments. Port 2 is used because ports 0 and 1
+ * have EC-side restrictions on certain pins. Both are Dahlia-specific
+ * extensions to the IT8801 emulation spec — the EC writes to SOVR(2)
+ * to toggle these.
  */
-#define IOEX_TP_EN_PIN    0   /* port 0, bit 0: touchpad enable (PA15) — spec */
-#define IOEX_KB_SCAN_PIN  1   /* port 0, bit 1: keyboard scan enable — extension */
+#define IOEX_IOEX_PORT    2   /* port 2 of SOVR */
+#define IOEX_TP_EN_PIN    0   /* port 2, bit 0: touchpad enable (PA15) */
+#define IOEX_KB_SCAN_PIN  2   /* port 2, bit 2: keyboard scan enable */
 
 /* Caps Lock LED bit in the HID LED report (HID 1.11 LED page) */
 #define HID_LED_CAPS_LOCK   (1U << 1)
@@ -357,7 +358,7 @@ static void dahlia_tp_module_on_ioex_change(const struct device *dev,
 					    bool level)
 {
 	ARG_UNUSED(dev);
-	if (port != 0) {
+	if (port != IOEX_IOEX_PORT) {
 		return;
 	}
 	switch (pin) {

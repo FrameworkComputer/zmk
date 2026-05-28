@@ -65,10 +65,11 @@
 
     /*
      * IT8801 register emulation at I2C 0x38.
-     * SOVR(0) bit 0 = touchpad enable / TP_EN (drives PA15)  — per spec
-     * SOVR(0) bit 1 = keyboard scan enable                    — extension
-     * Initial value 0xFF means "everything enabled" — the EC reads
-     * this at init.
+     * SOVR(2) bit 0 = touchpad enable / TP_EN (drives PA15)
+     * SOVR(2) bit 2 = keyboard scan enable
+     * Ports 0 and 1 are unused on this device (EC-side pin
+     * restrictions). SOVR shadows default to 0xFF (everything
+     * enabled) so the EC sees a sane state at init.
      */
     i2c_ioex: it8801-emu@38 {
         compatible = "zmk,i2c-target-it8801";
