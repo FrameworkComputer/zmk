@@ -185,6 +185,25 @@ static void irq_deassert_handler(struct k_work *work)
 	const struct i2c_hid_target_config *cfg = data->dev->config;
 
 	gpio_pin_set_dt(&cfg->irq_gpio, 0);
+
+	/*
+	 * Race protection: if a new report came in between the STOP
+	 * handler clearing input_report_pending and us running, the
+	 * pending flag is 1 again. The new submit queued an assert_work
+	 * but it was a no-op (IRQ already asserted), so without this
+	 * re-assert the EC ends up with IRQ deasserted while a report
+	 * sits in the buffer — no edge to wake the EC.
+	 *
+	 * Hold HIGH for 20 µs before re-asserting so the EC's input
+	 * deglitch filter registers it as a clean deassert and the
+	 * subsequent LOW as a real falling edge. With just two back-to-
+	 * back GPIO writes (~125 ns each at 16 MHz) the EC's filter may
+	 * eat the pulse entirely and see continuous LOW.
+	 */
+	if (atomic_get(&data->input_report_pending)) {
+		k_busy_wait(20);
+		gpio_pin_set_dt(&cfg->irq_gpio, 1);
+	}
 }
 
 static void reset_handler(struct k_work *work)
@@ -474,10 +493,25 @@ static int hid_target_stop(struct i2c_target_config *config)
 	/*
 	 * If the host just read the input register and a report was pending,
 	 * deassert IRQ.
+	 *
+	 * Race: a new submit can happen during the read transaction. The
+	 * submit calls atomic_ptr_set on active_input_buf and re-arms
+	 * pending=1. The atomic_cas below clears that, losing track of the
+	 * new report. Detect by comparing the cached read_buf to the
+	 * current active_input_buf — if they differ, a swap happened
+	 * during the read, so there's still a fresh report and we must
+	 * keep pending raised so the deassert handler re-asserts.
 	 */
 	if (data->addressed_reg == REG_ID_INPUT ||
 	    data->addressed_reg == REG_ID_NONE) {
+		bool swap_during_read =
+			(atomic_ptr_get(&data->active_input_buf) !=
+			 (atomic_ptr_val_t)data->read_buf);
+
 		if (atomic_cas(&data->input_report_pending, 1, 0)) {
+			if (swap_during_read) {
+				atomic_set(&data->input_report_pending, 1);
+			}
 			k_work_submit(&data->irq_deassert_work);
 		}
 	}
