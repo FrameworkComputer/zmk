@@ -16,7 +16,19 @@
 	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
 	pinctrl-names = "default";
 	status = "okay";
-	clock-frequency = <I2C_BITRATE_FAST>;
+	clock-frequency = <I2C_BITRATE_FAST_PLUS>;
+	/*
+	 * Explicit TIMINGR for 16 MHz I2C kernel clock (HSI16, PCLK1,
+	 * APB1 prescaler = 1). Zephyr's runtime computation refuses
+	 * Fm+ without manual presets; hand-picked here.
+	 *
+	 * TIMINGR layout: [PRESC:4][rsv:4][SCLDEL:4][SDADEL:4][SCLH:8][SCLL:8]
+	 *   PRESC=0, SCLDEL=1, SDADEL=0, SCLH=4, SCLL=10
+	 *   t_LOW = 11*62.5ns = 687.5ns  (Fm+ min 500ns)
+	 *   t_HIGH = 5*62.5ns = 312.5ns  (Fm+ min 260ns)
+	 *   period = 16 ticks = 1.0us = 1 MHz
+	 */
+	timings = <16000000 I2C_BITRATE_FAST_PLUS 0x0010040A>;
 };
 
 / {

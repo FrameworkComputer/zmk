@@ -387,6 +387,33 @@ static void dahlia_tp_module_on_ioex_change(const struct device *dev,
 	}
 }
 
+/*
+ * Enable I2C1 Fast Mode Plus (20 mA drive) on both peripheral and pad.
+ * Zephyr's STM32 I2C driver configures TIMINGR for Fm+ when the DT says
+ * I2C_BITRATE_FAST_PLUS, but does NOT touch CR1.FMP or SYSCFG_CFGR1's
+ * per-pin Fm+ bits. Without these the rising edges are too slow at 1 MHz
+ * and the bus glitches. Runs at APPLICATION/0, after Zephyr's POST_KERNEL
+ * I2C init.
+ */
+static int dahlia_tp_module_enable_i2c_fmp(void)
+{
+	RCC->APBENR2 |= RCC_APBENR2_SYSCFGEN;
+	(void)RCC->APBENR2;
+
+	SYSCFG->CFGR1 |= SYSCFG_CFGR1_I2C_PB6_FMP |
+			 SYSCFG_CFGR1_I2C_PB7_FMP |
+			 SYSCFG_CFGR1_I2C_PA9_FMP |
+			 SYSCFG_CFGR1_I2C_PA10_FMP;
+
+	/* CR1.FMP is only writable while PE=0. */
+	I2C1->CR1 &= ~I2C_CR1_PE;
+	I2C1->CR1 |= I2C_CR1_FMP;
+	I2C1->CR1 |= I2C_CR1_PE;
+
+	return 0;
+}
+SYS_INIT(dahlia_tp_module_enable_i2c_fmp, APPLICATION, 0);
+
 static int dahlia_tp_module_register_ioex_cb(void)
 {
 	const struct device *ioex = DEVICE_DT_GET(DT_NODELABEL(i2c_ioex));
