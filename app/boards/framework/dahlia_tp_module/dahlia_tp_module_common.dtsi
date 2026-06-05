@@ -16,6 +16,31 @@
 	chosen {
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &code_partition;
+	};
+};
+
+/*
+ * STM32U073C8: 64 KB flash, 2 KB erase pages.
+ * Reserve the last 8 KB (4 erase pages) for Zephyr Settings / NVS so we
+ * can persist things like Fn Lock state across reboots. NVS needs at
+ * least two pages so it can erase one while writing to the other; we
+ * give it four for extra headroom and wear leveling.
+ */
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		code_partition: partition@0 {
+			label = "code";
+			reg = <0x0 DT_SIZE_K(56)>;
+		};
+		storage_partition: partition@e000 {
+			label = "storage";
+			reg = <0xe000 DT_SIZE_K(8)>;
+		};
 	};
 };
 

@@ -22,10 +22,13 @@
 
 #include <zmk/event_manager.h>
 #include <zmk/events/keycode_state_changed.h>
+#include <zmk/events/layer_state_changed.h>
 #include <zmk/keymap.h>
 #include <zmk/hid.h>
 #include <dt-bindings/zmk/hid_usage_pages.h>
 #include <dt-bindings/zmk/hid_usage.h>
+
+#include <zephyr/settings/settings.h>
 
 #if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
 #include <zmk/events/hid_indicators_changed.h>
@@ -288,11 +291,11 @@ static bool dahlia_tp_en_state = true;
  * The deghost driver calls the weak hook below before forwarding any
  * matrix event; we override it to return this flag.
  */
-static volatile bool dahlia_inputdeck_enabled = true;
+static volatile bool dahlia_tp_module_enabled = true;
 
 bool kscan_deghost_input_enabled(void)
 {
-	return dahlia_inputdeck_enabled;
+	return dahlia_tp_module_enabled;
 }
 
 static void dahlia_tp_module_set_tp_en(bool on)
@@ -310,7 +313,7 @@ static void dahlia_tp_module_set_tp_en(bool on)
 
 static void dahlia_inputdeck_set(bool on)
 {
-	dahlia_inputdeck_enabled = on;
+	dahlia_tp_module_enabled = on;
 }
 
 static int dahlia_tp_module_force_tp_en_high(void)
@@ -424,3 +427,83 @@ static int dahlia_tp_module_register_ioex_cb(void)
 	return 0;
 }
 SYS_INIT(dahlia_tp_module_register_ioex_cb, APPLICATION, 90);
+
+#if IS_ENABLED(CONFIG_SETTINGS)
+/* =========================================================================
+ * Persistent flags in NVS (wear levelled)
+ *
+ * Key "dahlia/flags" stores 8 bits.
+ *   bit 0 is Fn Lock (mirrors the FNLK layer, id 2)
+ *   bits 1..7 are reserved
+ * These are restored on boot from NVS.
+ * =========================================================================
+ */
+#define FNLK_LAYER_ID  2
+
+#define DAHLIA_FLAG_FNLK   (1U << 0)
+
+static uint8_t dahlia_tp_module_flags;
+static bool dahlia_tp_module_flags_loaded;
+
+static int dahlia_flags_settings_set(const char *key, size_t len,
+				     settings_read_cb read_cb, void *cb_arg)
+{
+	const char *next;
+	if (settings_name_steq(key, "flags", &next) && !next) {
+		uint8_t val = 0;
+		if (read_cb(cb_arg, &val, sizeof(val)) > 0) {
+			dahlia_tp_module_flags = val;
+			if (dahlia_tp_module_flags & DAHLIA_FLAG_FNLK) {
+				zmk_keymap_layer_activate(FNLK_LAYER_ID, false);
+			}
+		}
+		return 0;
+	}
+	return -ENOENT;
+}
+
+SETTINGS_STATIC_HANDLER_DEFINE(dahlia_flags, "dahlia", NULL,
+			       dahlia_flags_settings_set, NULL, NULL);
+
+/* Scheduled after ZMK keymap init */
+static int dahlia_tp_module_flags_init(void)
+{
+	int err = settings_subsys_init();
+	if (err) {
+		return err;
+	}
+	err = settings_load_subtree("dahlia");
+	dahlia_tp_module_flags_loaded = true;
+	return err;
+}
+SYS_INIT(dahlia_tp_module_flags_init, APPLICATION, 95);
+
+/* Update one bit of the flags byte; if it changed and the initial load
+ * has finished, persist the whole byte. */
+static void dahlia_tp_module_flags_update(uint8_t mask, bool value)
+{
+	uint8_t prev = dahlia_tp_module_flags;
+	if (value) {
+		dahlia_tp_module_flags |= mask;
+	} else {
+		dahlia_tp_module_flags &= ~mask;
+	}
+	if (dahlia_tp_module_flags != prev && dahlia_tp_module_flags_loaded) {
+		(void)settings_save_one("dahlia/flags", &dahlia_tp_module_flags,
+					sizeof(dahlia_tp_module_flags));
+	}
+}
+
+static int dahlia_tp_module_fnlk_layer_listener(const zmk_event_t *eh)
+{
+	const struct zmk_layer_state_changed *ev =
+		as_zmk_layer_state_changed(eh);
+	if (ev && ev->layer == FNLK_LAYER_ID) {
+		dahlia_tp_module_flags_update(DAHLIA_FLAG_FNLK, ev->state);
+	}
+	return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(dahlia_tp_module_fnlk_layer, dahlia_tp_module_fnlk_layer_listener);
+ZMK_SUBSCRIPTION(dahlia_tp_module_fnlk_layer, zmk_layer_state_changed);
+#endif /* CONFIG_SETTINGS */
