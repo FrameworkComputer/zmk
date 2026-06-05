@@ -2,7 +2,7 @@
  * Copyright (c) 2026
  * SPDX-License-Identifier: Apache-2.0
  *
- * Common DTS for Dahlia Touchpad Module — STM32U073CC (48-pin UFQFPN, 256KB).
+ * Common DTS for Dahlia Touchpad Module — STM32U073C8 (48-pin UFQFPN, 64KB).
  * Shared between default (DVT/MP) and EVT variants.
  */
 

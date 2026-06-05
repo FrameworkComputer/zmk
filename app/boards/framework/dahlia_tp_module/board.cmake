@@ -1,9 +1,9 @@
 # keep first
 board_runner_args(stm32cubeprogrammer "--port=swd" "--reset-mode=hw")
 
-board_runner_args(pyocd "--target=stm32u073ccux")
+board_runner_args(pyocd "--target=stm32u073c8ux")
 
-board_runner_args(jlink "--device=STM32U073CC" "--reset-after-load")
+board_runner_args(jlink "--device=STM32U073C8" "--reset-after-load")
 
 # keep first
 include(${ZEPHYR_BASE}/boards/common/stm32cubeprogrammer.board.cmake)

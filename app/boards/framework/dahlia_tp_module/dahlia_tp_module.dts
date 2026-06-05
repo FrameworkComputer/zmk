@@ -7,8 +7,8 @@
  */
 
 /dts-v1/;
-#include <st/u0/stm32u073Xc.dtsi>
-#include <st/u0/stm32u073ccux-pinctrl.dtsi>
+#include <st/u0/stm32u073X8.dtsi>
+#include <st/u0/stm32u073c8ux-pinctrl.dtsi>
 #include "dahlia_tp_module_common.dtsi"
 
 /* I2C1 on PB6/PB7 (correct pin mask) */
