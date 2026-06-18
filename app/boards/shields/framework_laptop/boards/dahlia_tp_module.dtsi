@@ -58,9 +58,9 @@
         vid = <0x32AC>;
         pid = <0x0038>;
         version-id = <0x0007>;
-        max-input-length = <11>;
+        max-input-length = <16>;
         max-output-length = <4>;
-        report-desc-length = <96>;
+        report-desc-length = <97>;
     };
 
     /*
