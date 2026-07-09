@@ -5,3 +5,7 @@
  */
 
 #include "iso-keymap.dtsi"
+
+&kscan_deghost {
+    transform = <&framework12_iso_transform>;
+};

@@ -1,0 +1,11 @@
+/*
+ * Copyright (c) 2026 Framework Computer Inc
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#include "generic-keymap.dtsi"
+
+&kscan_deghost {
+    transform = <&framework_laptop_12_generic_transform>;
+};

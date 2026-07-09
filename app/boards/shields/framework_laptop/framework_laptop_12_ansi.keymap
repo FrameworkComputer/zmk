@@ -5,3 +5,7 @@
  */
 
 #include "ansi-keymap.dtsi"
+
+&kscan_deghost {
+    transform = <&framework12_ansi_transform>;
+};
