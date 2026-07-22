@@ -10,6 +10,7 @@
 #include <zephyr/drivers/i2c/target/i2c_hid.h>
 
 #include <zmk/hid.h>
+#include <zmk/i2c_hid.h>
 #include <zmk/endpoints_types.h>
 
 #if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
@@ -67,7 +68,14 @@ static int i2c_hid_get_report_cb(const struct device *dev,
 }
 #endif
 
-#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS) || IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
+/* A HID reset may destroy an unread key report (e.g. a release), leaving
+ * the host with a stuck key. Once the host has read the reset marker,
+ * send the current keyboard state so it can resync. */
+static void i2c_hid_reset_read_cb(const struct device *dev) {
+    ARG_UNUSED(dev);
+    zmk_i2c_hid_send_keyboard_report();
+}
+
 static const struct i2c_hid_target_callbacks i2c_hid_callbacks = {
 #if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
     .output_report = i2c_hid_output_report_cb,
@@ -76,8 +84,8 @@ static const struct i2c_hid_target_callbacks i2c_hid_callbacks = {
     .set_report = i2c_hid_set_report_cb,
     .get_report = i2c_hid_get_report_cb,
 #endif
+    .reset_read = i2c_hid_reset_read_cb,
 };
-#endif
 
 int zmk_i2c_hid_send_keyboard_report(void) {
     struct zmk_hid_keyboard_report *report = zmk_hid_get_keyboard_report();
@@ -132,9 +140,7 @@ static int zmk_i2c_hid_init(void) {
         return ret;
     }
 
-#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS) || IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
     i2c_hid_target_set_callbacks(i2c_hid_dev, &i2c_hid_callbacks);
-#endif
 
     ret = i2c_target_driver_register(i2c_hid_dev);
     if (ret < 0) {

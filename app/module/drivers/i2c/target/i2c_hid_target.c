@@ -141,6 +141,10 @@ struct i2c_hid_target_data {
 	struct k_work cmd_work;
 	struct k_work reset_work;
 	struct k_work output_work;
+	struct k_work reset_read_work;
+
+	/* Buffer holding the reset marker; non-NULL until the host reads it */
+	const uint8_t *sentinel_buf;
 
 	/* Snapshot of command bytes for deferred processing */
 	uint8_t cmd_buf[4];
@@ -233,9 +237,21 @@ static void reset_handler(struct k_work *work)
 	staging[1] = 0x00;
 	atomic_ptr_set(&data->active_input_buf, staging);
 	atomic_set(&data->input_report_pending, 1);
+	data->sentinel_buf = staging;
 
 	/* Assert IRQ to tell host the reset is complete */
 	k_work_submit(&data->irq_assert_work);
+}
+
+/* The host has read the reset marker — let the app resync its state. */
+static void reset_read_handler(struct k_work *work)
+{
+	struct i2c_hid_target_data *data =
+		CONTAINER_OF(work, struct i2c_hid_target_data, reset_read_work);
+
+	if (data->app_cb && data->app_cb->reset_read) {
+		data->app_cb->reset_read(data->dev);
+	}
 }
 
 static void cmd_handler(struct k_work *work)
@@ -546,6 +562,13 @@ static int hid_target_stop(struct i2c_target_config *config)
 			}
 			k_work_submit(&data->irq_deassert_work);
 		}
+
+		/* Host consumed the reset marker: have the app resync. */
+		if (data->read_idx > 0 &&
+		    data->read_buf == data->sentinel_buf) {
+			data->sentinel_buf = NULL;
+			k_work_submit(&data->reset_read_work);
+		}
 	}
 
 	/* Reset state for next transaction */
@@ -723,6 +746,7 @@ static int i2c_hid_target_init(const struct device *dev)
 	k_work_init(&data->cmd_work, cmd_handler);
 	k_work_init(&data->reset_work, reset_handler);
 	k_work_init(&data->output_work, output_handler);
+	k_work_init(&data->reset_read_work, reset_read_handler);
 
 	/* Initial state */
 	data->state = STATE_IDLE;

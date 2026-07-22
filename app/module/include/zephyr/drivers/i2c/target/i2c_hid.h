@@ -78,11 +78,19 @@ typedef int (*i2c_hid_get_report_cb_t)(const struct device *dev,
 				       uint8_t id, uint8_t *buf,
 				       uint16_t max_len);
 
+/**
+ * Called after the host has read the reset marker (the empty report a HID
+ * reset produces). The app should submit a fresh input report here: the
+ * reset may have destroyed an unread report, and this resyncs the host.
+ */
+typedef void (*i2c_hid_reset_read_cb_t)(const struct device *dev);
+
 /** Application callbacks for I2C HID target events */
 struct i2c_hid_target_callbacks {
 	i2c_hid_output_report_cb_t output_report;
 	i2c_hid_set_report_cb_t set_report;
 	i2c_hid_get_report_cb_t get_report;
+	i2c_hid_reset_read_cb_t reset_read;
 };
 
 /**
