@@ -46,6 +46,7 @@ enum i2c_hid_state {
 	STATE_REG_KNOWN,
 	STATE_WRITE_COMMAND,
 	STATE_WRITE_OUTPUT,
+	STATE_WRITE_DATA,
 };
 
 /* Which register the host addressed */
@@ -147,6 +148,13 @@ struct i2c_hid_target_data {
 
 	/* Snapshot of output report for deferred processing */
 	uint16_t output_snapshot_len;
+
+	/* Pending SET_REPORT context: set by cmd_handler when it sees a
+	 * SET_REPORT opcode, consumed by output_handler when the report data
+	 * arrives in the next transaction (via the DATA or OUTPUT register). */
+	bool pending_set_report;
+	uint8_t pending_set_type;
+	uint8_t pending_set_id;
 };
 
 /* ---------- helpers --------------------------------------------------- */
@@ -296,13 +304,16 @@ static void cmd_handler(struct k_work *work)
 
 	case CMD_SET_REPORT:
 		/*
-		 * SET_REPORT: the host writes the command register, then
-		 * immediately continues writing the data payload in the same
-		 * transaction. The payload bytes arrive via the output register
-		 * write path and are handled in output_work with the SET_REPORT
-		 * context.
+		 * SET_REPORT: the host follows this command with a write to the
+		 * DATA (or OUTPUT) register containing the report payload.
+		 * Stash the type/id so output_handler knows this next payload is
+		 * a SET_REPORT (and to which report) rather than an unsolicited
+		 * Output register write.
 		 */
 		LOG_DBG("SET_REPORT type=%u id=%u (data follows)", report_type, report_id);
+		data->pending_set_report = true;
+		data->pending_set_type = report_type;
+		data->pending_set_id = report_id;
 		break;
 
 	case CMD_SET_POWER:
@@ -320,21 +331,33 @@ static void output_handler(struct k_work *work)
 	struct i2c_hid_target_data *data =
 		CONTAINER_OF(work, struct i2c_hid_target_data, output_work);
 
-	if (!data->app_cb || !data->app_cb->output_report) {
-		return;
-	}
-
 	/*
-	 * write_buf contains the raw output register data.
+	 * write_buf contains the raw register data.
 	 * First 2 bytes are the length prefix, followed by the report data.
 	 */
 	uint16_t len = data->output_snapshot_len;
 
 	if (len <= 2) {
+		data->pending_set_report = false;
 		return;
 	}
 
-	data->app_cb->output_report(data->dev, data->write_buf + 2, len - 2);
+	if (data->pending_set_report) {
+		/* This payload followed a SET_REPORT command — dispatch as
+		 * a typed set_report if the app registered a handler. */
+		if (data->app_cb && data->app_cb->set_report) {
+			data->app_cb->set_report(
+				data->dev,
+				(enum i2c_hid_report_type)data->pending_set_type,
+				data->pending_set_id,
+				data->write_buf + 2, len - 2);
+		}
+		data->pending_set_report = false;
+	} else if (data->app_cb && data->app_cb->output_report) {
+		/* Unsolicited Output register write (legacy Output reports
+		 * such as keyboard LED state). */
+		data->app_cb->output_report(data->dev, data->write_buf + 2, len - 2);
+	}
 }
 
 /* ---------- I2C target callbacks (ISR context) ------------------------- */
@@ -441,6 +464,13 @@ static int hid_target_write_received(struct i2c_target_config *config,
 				data->state = STATE_WRITE_OUTPUT;
 				data->write_idx = 0;
 				break;
+			case REG_ID_DATA:
+				/* SET_REPORT payload lands here in the two-transaction
+				 * (Windows-style) SET_REPORT flow: host wrote command
+				 * first, now writes report data to the data register. */
+				data->state = STATE_WRITE_DATA;
+				data->write_idx = 0;
+				break;
 			default:
 				data->state = STATE_REG_KNOWN;
 				break;
@@ -458,6 +488,7 @@ static int hid_target_write_received(struct i2c_target_config *config,
 		break;
 
 	case STATE_WRITE_OUTPUT:
+	case STATE_WRITE_DATA:
 		if (data->write_idx < data->write_buf_len) {
 			data->write_buf[data->write_idx++] = val;
 		}
@@ -482,6 +513,7 @@ static int hid_target_stop(struct i2c_target_config *config)
 		break;
 
 	case STATE_WRITE_OUTPUT:
+	case STATE_WRITE_DATA:
 		data->output_snapshot_len = data->write_idx;
 		k_work_submit(&data->output_work);
 		break;
