@@ -601,6 +601,9 @@ static void load_stock_keymap_layer_ordering() {
         i++;
     }
 }
+#else
+/* Without layer reordering there is no ordering state to restore. */
+static void load_stock_keymap_layer_ordering() {}
 #endif
 
 static void reload_from_stock_keymap(void) {

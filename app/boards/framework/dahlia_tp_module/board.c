@@ -23,6 +23,7 @@
 #include "../../../module/drivers/i2c/target/i2c_it8801_target.h"
 #include <zephyr/drivers/i2c/target/i2c_hid.h>
 
+#include <zmk/behavior.h>
 #include <zmk/event_manager.h>
 #include <zmk/events/keycode_state_changed.h>
 #include <zmk/events/layer_state_changed.h>
@@ -513,6 +514,80 @@ ZMK_LISTENER(dahlia_tp_module_fnlk_layer, dahlia_tp_module_fnlk_layer_listener);
 ZMK_SUBSCRIPTION(dahlia_tp_module_fnlk_layer, zmk_layer_state_changed);
 #endif /* CONFIG_SETTINGS */
 
+/* =========================================================================
+ * Fn / LCtrl swap
+ *
+ * Swaps the two keys' bindings in the RAM keymap on all layers, using
+ * absolute values captured at first use (idempotent). RAM-only: never
+ * saved, so cold boot restores the stock keymap — keep it that way.
+ * =========================================================================
+ */
+
+#define DAHLIA_SWAP_LCTRL_ROW 1
+#define DAHLIA_SWAP_LCTRL_COL 14
+#define DAHLIA_SWAP_FN_ROW    0
+#define DAHLIA_SWAP_FN_COL    16
+
+ZMK_MATRIX_TRANSFORM_EXTERN(DT_CHOSEN(zmk_matrix_transform));
+#define DAHLIA_TRANSFORM  ZMK_MATRIX_TRANSFORM_T_FOR_NODE(DT_CHOSEN(zmk_matrix_transform))
+
+/* Boot bindings of the two positions, captured per layer before the first
+ * swap ever runs. ~100 bytes total. */
+static struct zmk_behavior_binding dahlia_boot_lctrl[ZMK_KEYMAP_LAYERS_LEN];
+static struct zmk_behavior_binding dahlia_boot_fn[ZMK_KEYMAP_LAYERS_LEN];
+static bool dahlia_boot_snapshot_done;
+static bool dahlia_swap_state;
+
+/* Returns 0 on success, negative on lookup/snapshot failure. */
+static int dahlia_swap_snapshot(int32_t *pos_lctrl, int32_t *pos_fn)
+{
+	*pos_lctrl = zmk_matrix_transform_row_column_to_position(
+		DAHLIA_TRANSFORM, DAHLIA_SWAP_LCTRL_ROW, DAHLIA_SWAP_LCTRL_COL);
+	*pos_fn = zmk_matrix_transform_row_column_to_position(
+		DAHLIA_TRANSFORM, DAHLIA_SWAP_FN_ROW, DAHLIA_SWAP_FN_COL);
+	if (*pos_lctrl < 0 || *pos_fn < 0)
+		return -EINVAL;
+
+	if (dahlia_boot_snapshot_done)
+		return 0;
+
+	for (zmk_keymap_layer_id_t l = 0; l < ZMK_KEYMAP_LAYERS_LEN; l++) {
+		const struct zmk_behavior_binding *a =
+			zmk_keymap_get_layer_binding_at_idx(l, *pos_lctrl);
+		const struct zmk_behavior_binding *b =
+			zmk_keymap_get_layer_binding_at_idx(l, *pos_fn);
+		if (!a || !b)
+			return -EINVAL;
+		dahlia_boot_lctrl[l] = *a;
+		dahlia_boot_fn[l] = *b;
+	}
+	dahlia_boot_snapshot_done = true;
+	return 0;
+}
+
+static int dahlia_set_swap(bool swapped)
+{
+	int32_t pos_lctrl, pos_fn;
+	int ret = dahlia_swap_snapshot(&pos_lctrl, &pos_fn);
+
+	if (ret < 0)
+		return ret;
+
+	for (zmk_keymap_layer_id_t l = 0; l < ZMK_KEYMAP_LAYERS_LEN; l++) {
+		ret = zmk_keymap_set_layer_binding_at_idx(l, pos_lctrl,
+			swapped ? dahlia_boot_fn[l] : dahlia_boot_lctrl[l]);
+		if (ret < 0)
+			return ret;
+		ret = zmk_keymap_set_layer_binding_at_idx(l, pos_fn,
+			swapped ? dahlia_boot_lctrl[l] : dahlia_boot_fn[l]);
+		if (ret < 0)
+			return ret;
+	}
+
+	dahlia_swap_state = swapped;
+	return 0;
+}
+
 #if IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
 /* =========================================================================
  * Vendor command channel (Feature report ID 0x20).
@@ -600,6 +675,8 @@ void zmk_i2c_hid_vendor_set_report(uint8_t id, const uint8_t *data, uint16_t len
 		len--;
 	}
 	uint8_t opcode = data[0];
+	const uint8_t *args = data + 1;
+	uint16_t args_len = len - 1;
 
 	switch (opcode) {
 	case 0x01: /* GET_FW_VERSION */
@@ -609,6 +686,24 @@ void zmk_i2c_hid_vendor_set_report(uint8_t id, const uint8_t *data, uint16_t len
 	case 0x02: /* GET_HW_INFO */
 		dahlia_vendor_handle_get_hw_info();
 		break;
+
+	case 0x10: /* SET_SWAP_FN_LCTRL */
+		if (args_len < 1) {
+			dahlia_vendor_reply(opcode, 0x01, NULL, 0);  /* EINVAL */
+			break;
+		}
+		if (dahlia_set_swap(args && args[0]) < 0) {
+			dahlia_vendor_reply(opcode, 0x02, NULL, 0);  /* internal error */
+			break;
+		}
+		dahlia_vendor_reply(opcode, 0x00, NULL, 0);
+		break;
+
+	case 0x11: { /* GET_SWAP_FN_LCTRL */
+		uint8_t v = dahlia_swap_state ? 1 : 0;
+		dahlia_vendor_reply(opcode, 0x00, &v, 1);
+		break;
+	}
 
 	default:
 		dahlia_vendor_reply(opcode, 0xFF, NULL, 0);  /* Unknown opcode */
