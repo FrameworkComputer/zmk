@@ -11,6 +11,8 @@
  *
  */
 
+#include <string.h>
+
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/fatal.h>
@@ -19,11 +21,14 @@
 #include <stm32u0xx.h>
 
 #include "../../../module/drivers/i2c/target/i2c_it8801_target.h"
+#include <zephyr/drivers/i2c/target/i2c_hid.h>
 
 #include <zmk/event_manager.h>
 #include <zmk/events/keycode_state_changed.h>
 #include <zmk/events/layer_state_changed.h>
+#include <zmk/events/position_state_changed.h>
 #include <zmk/keymap.h>
+#include <zmk/matrix_transform.h>
 #include <zmk/hid.h>
 #include <dt-bindings/zmk/hid_usage_pages.h>
 #include <dt-bindings/zmk/hid_usage.h>
@@ -507,3 +512,128 @@ static int dahlia_tp_module_fnlk_layer_listener(const zmk_event_t *eh)
 ZMK_LISTENER(dahlia_tp_module_fnlk_layer, dahlia_tp_module_fnlk_layer_listener);
 ZMK_SUBSCRIPTION(dahlia_tp_module_fnlk_layer, zmk_layer_state_changed);
 #endif /* CONFIG_SETTINGS */
+
+#if IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
+/* =========================================================================
+ * Vendor command channel (Feature report ID 0x20).
+ *
+ * Command:  SET_REPORT  [opcode][args…]
+ * Response: GET_REPORT  [opcode][status][data…]  (last response is cached)
+ *
+ * Opcodes and payloads: see VENDOR_PROTOCOL.md.
+ * =========================================================================
+ */
+
+/* Firmware version — hardcoded for now; wire to git via CMake later. */
+#define DAHLIA_FW_MAJOR  0
+#define DAHLIA_FW_MINOR  6
+#define DAHLIA_FW_DIRTY  0
+static const uint8_t dahlia_fw_hash[8] = {
+	0, 0, 0, 0, 0, 0, 0, 0
+};
+
+/* Response buffer, populated on each SET_REPORT, drained by next GET_REPORT.
+ * Max response fits in 32-byte report: 1 byte ID (added by driver) +
+ * opcode + status + up to 29 bytes data. */
+static uint8_t dahlia_vendor_response[31];
+static uint16_t dahlia_vendor_response_len;
+
+static void dahlia_vendor_reply(uint8_t opcode, uint8_t status,
+				const uint8_t *data, size_t data_len)
+{
+	if (data_len > sizeof(dahlia_vendor_response) - 2) {
+		data_len = sizeof(dahlia_vendor_response) - 2;
+	}
+	dahlia_vendor_response[0] = opcode;
+	dahlia_vendor_response[1] = status;
+	if (data && data_len) {
+		memcpy(&dahlia_vendor_response[2], data, data_len);
+	}
+	dahlia_vendor_response_len = 2 + data_len;
+}
+
+/* STM32U073 hardware identifiers (see STM32U0 reference manual). */
+#define STM32_FLASHSIZE_ADDR   0x1FFF6EA0u  /* 16-bit KB value */
+#define STM32_UID_ADDR         0x1FFF6E50u  /* 12 bytes (96 bits) */
+
+static void dahlia_vendor_handle_get_hw_info(void)
+{
+	uint16_t chip_id = (uint16_t)(DBGMCU->IDCODE & 0xFFFu);
+	uint16_t flash_kb = *(volatile uint16_t *)STM32_FLASHSIZE_ADDR;
+	uint16_t ram_kb = 40;  /* STM32U073: SRAM1 32K + SRAM2 8K */
+
+	uint8_t payload[2 + 2 + 2 + 12];
+	payload[0] = chip_id & 0xFF;
+	payload[1] = (chip_id >> 8) & 0xFF;
+	payload[2] = flash_kb & 0xFF;
+	payload[3] = (flash_kb >> 8) & 0xFF;
+	payload[4] = ram_kb & 0xFF;
+	payload[5] = (ram_kb >> 8) & 0xFF;
+	memcpy(&payload[6], (const void *)STM32_UID_ADDR, 12);
+
+	dahlia_vendor_reply(0x02, 0x00, payload, sizeof(payload));
+}
+
+static void dahlia_vendor_handle_get_fw_version(void)
+{
+	uint8_t payload[3 + sizeof(dahlia_fw_hash)];
+	payload[0] = DAHLIA_FW_MAJOR;
+	payload[1] = DAHLIA_FW_MINOR;
+	payload[2] = DAHLIA_FW_DIRTY;
+	memcpy(&payload[3], dahlia_fw_hash, sizeof(dahlia_fw_hash));
+
+	dahlia_vendor_reply(0x01, 0x00, payload, sizeof(payload));
+}
+
+void zmk_i2c_hid_vendor_set_report(uint8_t id, const uint8_t *data, uint16_t len)
+{
+	/* Some HID-over-I2C implementations prefix the payload with the
+	 * report-ID byte (per HID class spec), others don't. Tolerate both:
+	 * skip a leading byte equal to our report ID (0x20) if present, then
+	 * treat data[0] as the opcode. Since no valid opcode is 0x20 (the
+	 * config ops use 0x10/0x11), there's no ambiguity. */
+	if (id != 0x20 || len < 1) {
+		return;
+	}
+	if (data[0] == 0x20 && len >= 2) {
+		data++;
+		len--;
+	}
+	uint8_t opcode = data[0];
+
+	switch (opcode) {
+	case 0x01: /* GET_FW_VERSION */
+		dahlia_vendor_handle_get_fw_version();
+		break;
+
+	case 0x02: /* GET_HW_INFO */
+		dahlia_vendor_handle_get_hw_info();
+		break;
+
+	default:
+		dahlia_vendor_reply(opcode, 0xFF, NULL, 0);  /* Unknown opcode */
+		break;
+	}
+}
+
+int zmk_i2c_hid_vendor_get_report(uint8_t id, uint8_t *buf, uint16_t max_len)
+{
+	if (id != 0x20) {
+		return 0;
+	}
+	uint16_t n = dahlia_vendor_response_len;
+	if (n > max_len) n = max_len;
+	if (n) {
+		memcpy(buf, dahlia_vendor_response, n);
+	}
+	return n;
+}
+
+/* Seed the response buffer so a bare GET_REPORT returns the fw version. */
+static int dahlia_vendor_seed_response(void)
+{
+	dahlia_vendor_handle_get_fw_version();
+	return 0;
+}
+SYS_INIT(dahlia_vendor_seed_response, APPLICATION, 92);
+#endif /* CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND */

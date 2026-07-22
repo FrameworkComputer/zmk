@@ -29,10 +29,10 @@
         irq-gpios = <&gpioa 12 (GPIO_ACTIVE_LOW | GPIO_OPEN_DRAIN)>;
         vid = <0x32AC>;
         pid = <0x0038>;
-        version-id = <0x0009>;
-        max-input-length = <16>;
-        max-output-length = <4>;
-        report-desc-length = <97>;
+        version-id = <0x0010>;
+        max-input-length = <36>;
+        max-output-length = <36>;
+        report-desc-length = <120>;
     };
 
     /*
