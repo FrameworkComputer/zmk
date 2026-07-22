@@ -110,6 +110,12 @@ config ZMK_HID_INDICATORS
       Enable HID indicators, used for detecting state of Caps/Scroll/Num Lock,
       Kata, and Compose.
 
+config ZMK_HID_FRAMEWORK_VENDOR_COMMAND
+    bool "Framework vendor command channel (Report ID 0x20)"
+    help
+      Append a vendor-defined Feature report (Usage Page 0xFF00, ID 0x20)
+      to the HID descriptor, dispatched to board-provided handlers.
+
 config ZMK_HID_SEPARATE_MOD_RELEASE_REPORT
     bool "Release Modifiers Separately"
     help

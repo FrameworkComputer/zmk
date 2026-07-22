@@ -35,9 +35,47 @@ static void i2c_hid_output_report_cb(const struct device *dev,
     struct zmk_endpoint_instance endpoint = { .transport = ZMK_TRANSPORT_I2C_HID };
     zmk_hid_indicators_process_report(&report, endpoint);
 }
+#endif
 
+#if IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
+/* Board code overrides these to implement the vendor command channel. */
+__weak void zmk_i2c_hid_vendor_set_report(uint8_t id, const uint8_t *data, uint16_t len) {
+    ARG_UNUSED(id); ARG_UNUSED(data); ARG_UNUSED(len);
+}
+__weak int zmk_i2c_hid_vendor_get_report(uint8_t id, uint8_t *buf, uint16_t max_len) {
+    ARG_UNUSED(id); ARG_UNUSED(buf); ARG_UNUSED(max_len);
+    return 0;
+}
+
+/* Forwarders: only route Feature reports to the vendor hooks. Everything
+ * else is ignored (we don't currently support Input/Output SET_REPORT). */
+static void i2c_hid_set_report_cb(const struct device *dev,
+                                  enum i2c_hid_report_type type, uint8_t id,
+                                  const uint8_t *data, uint16_t len) {
+    if (type == I2C_HID_REPORT_TYPE_FEATURE) {
+        zmk_i2c_hid_vendor_set_report(id, data, len);
+    }
+}
+
+static int i2c_hid_get_report_cb(const struct device *dev,
+                                 enum i2c_hid_report_type type, uint8_t id,
+                                 uint8_t *buf, uint16_t max_len) {
+    if (type == I2C_HID_REPORT_TYPE_FEATURE) {
+        return zmk_i2c_hid_vendor_get_report(id, buf, max_len);
+    }
+    return 0;
+}
+#endif
+
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS) || IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
 static const struct i2c_hid_target_callbacks i2c_hid_callbacks = {
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
     .output_report = i2c_hid_output_report_cb,
+#endif
+#if IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
+    .set_report = i2c_hid_set_report_cb,
+    .get_report = i2c_hid_get_report_cb,
+#endif
 };
 #endif
 
@@ -94,7 +132,7 @@ static int zmk_i2c_hid_init(void) {
         return ret;
     }
 
-#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS) || IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
     i2c_hid_target_set_callbacks(i2c_hid_dev, &i2c_hid_callbacks);
 #endif
 
