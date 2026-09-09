@@ -60,3 +60,15 @@ properties:
     type: int
     required: true
     description: Size in bytes of the HID report descriptor.
+
+  fw-flags:
+    type: int
+    default: 0
+    description: |
+      Vendor flags reported in the HID descriptor's 4-byte reserved field
+      (offset 26, little endian). Opaque here; bit meanings are the
+      board's business. HID-over-I2C v1.0 says the field should be zero
+      and no host is known to read it, so it is usable space.
+
+      This is the compile-time value; a board can OR in more at runtime by
+      overriding i2c_hid_target_board_fw_flags().

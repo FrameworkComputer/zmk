@@ -30,6 +30,12 @@
         vid = <0x32AC>;
         pid = <0x0038>;
         version-id = <0x0100>;
+        /*
+         * fw-flags = <0x01> marks a build the BIOS must not replace with
+         * its bundled firmware — engineering or pinned images. Unset
+         * means stock, opting into automatic updates. A flashing tool can
+         * protect a stock image instead; see board.c.
+         */
         max-input-length = <36>;
         max-output-length = <36>;
         report-desc-length = <120>;

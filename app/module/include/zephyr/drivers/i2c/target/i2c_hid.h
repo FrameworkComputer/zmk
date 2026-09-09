@@ -35,6 +35,23 @@ enum i2c_hid_report_type {
 };
 
 /**
+ * @brief Extra `fw-flags` bits contributed by board code.
+ *
+ * Called once during driver init and OR-ed with the `fw-flags` device tree
+ * property to form the HID descriptor's reserved field. Defaults to 0.
+ * Boards override it to report what only they know at runtime, such as a
+ * flag a flashing tool programmed into flash.
+ *
+ * Runs before the I2C target is registered, so before any host can read
+ * the descriptor — which means it must not touch a subsystem that
+ * initialises later than this driver. Memory-mapped flash is fine; NVS is
+ * not.
+ *
+ * @return Flag bits to OR into the descriptor's reserved field.
+ */
+uint32_t i2c_hid_target_board_fw_flags(void);
+
+/**
  * @brief Callback invoked when the host sends an output report.
  *
  * @param dev      Pointer to the I2C HID target device.

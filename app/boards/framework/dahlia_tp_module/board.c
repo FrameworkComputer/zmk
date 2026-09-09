@@ -588,6 +588,71 @@ static int dahlia_set_swap(bool swapped)
 	return 0;
 }
 
+/* =========================================================================
+ * Misc flags, and update protection
+ *
+ * Slot 0 of the misc-flags partition is update protect: the BIOS replaces
+ * this firmware when the version it bundles is newer, and a deck can ask
+ * not to be replaced. The request travels with the deck, so it is
+ * reported to the host in the HID descriptor's reserved field (offset 26)
+ * as DAHLIA_TP_MODULE_FW_FLAG_NO_AUTO_UPDATE. Set it at build time with
+ * fw-flags = <0x01> on the i2c_hid node, or, to protect a stock image
+ * without rebuilding it, have the flashing tool set the slot; this file
+ * contributes the latter. Slot encoding is in the board dtsi.
+ *
+ * Not a write protect: EC_CMD_KBD_FLASH_STM32 never consults it and a
+ * mass erase clears it. It only asks an automatic updater to stay away.
+ *
+ * A slot that is neither all ones nor all zeros counts as clear, so a
+ * half-written slot cannot block a recovery update. Flash here is ECC'd
+ * per doubleword, so an interrupted write could fault on read — same
+ * exposure as an interrupted image write, and the same outcome: a deck
+ * that cannot answer, which the BIOS reflashes, clearing the slot.
+ * =========================================================================
+ */
+
+/* Bit in the HID descriptor's reserved field. */
+#define DAHLIA_TP_MODULE_FW_FLAG_NO_AUTO_UPDATE 0x01
+
+/* Slot numbers in the misc-flags area. 8 slots, 0..7. */
+#define DAHLIA_TP_MODULE_MISC_SLOT_NO_AUTO_UPDATE 0
+
+#define DAHLIA_TP_MODULE_MISC_FLAGS_ADDR \
+	(DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + \
+	 DT_REG_ADDR(DT_NODELABEL(misc_flags_partition)))
+
+#define DAHLIA_TP_MODULE_MISC_SLOT_SIZE 8
+
+BUILD_ASSERT(DT_REG_SIZE(DT_NODELABEL(misc_flags_partition)) >=
+		     (DAHLIA_TP_MODULE_MISC_SLOT_NO_AUTO_UPDATE + 1) *
+			     DAHLIA_TP_MODULE_MISC_SLOT_SIZE,
+	     "misc-flags partition too small for the slots used here");
+
+static bool dahlia_tp_module_misc_slot_set(unsigned int slot)
+{
+	const volatile uint32_t *p =
+		(const volatile uint32_t *)(DAHLIA_TP_MODULE_MISC_FLAGS_ADDR +
+					    slot * DAHLIA_TP_MODULE_MISC_SLOT_SIZE);
+
+	return p[0] == 0 && p[1] == 0;
+}
+
+/*
+ * Called from the i2c-hid driver's init, before the I2C target is
+ * registered, so it must not touch anything that initialises later. This
+ * only reads memory-mapped flash, which is always available.
+ */
+uint32_t i2c_hid_target_board_fw_flags(void)
+{
+	uint32_t flags = 0;
+
+	if (dahlia_tp_module_misc_slot_set(DAHLIA_TP_MODULE_MISC_SLOT_NO_AUTO_UPDATE)) {
+		flags |= DAHLIA_TP_MODULE_FW_FLAG_NO_AUTO_UPDATE;
+	}
+
+	return flags;
+}
+
 #if IS_ENABLED(CONFIG_ZMK_HID_FRAMEWORK_VENDOR_COMMAND)
 /* =========================================================================
  * Vendor command channel (Feature report ID 0x20).

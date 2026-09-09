@@ -21,11 +21,19 @@
 };
 
 /*
- * STM32U073C8: 64 KB flash, 2 KB erase pages.
- * Reserve the last 8 KB (4 erase pages) for Zephyr Settings / NVS so we
- * can persist things like Fn Lock state across reboots. NVS needs at
- * least two pages so it can erase one while writing to the other; we
- * give it four for extra headroom and wear leveling.
+ * STM32U073C8: 64 KB flash (0x10000), 2 KB erase pages, 8-byte writes.
+ *
+ * NVS gets the last 8 KB. It needs two pages to erase one while writing
+ * the other; four gives headroom and wear levelling.
+ *
+ * misc-flags holds eight one-doubleword slots a flashing tool can set per
+ * unit, for things the image cannot know about itself. No header, no
+ * filesystem: 8 bytes is the write granularity, so a doubleword is the
+ * smallest settable thing and 64 bytes is eight of them. A slot reads all
+ * zeros when SET, all ones when CLEAR — a mass erase precedes every write
+ * and leaves flash all ones, and programming only clears bits. Slot 0 is
+ * update protect; the rest are unassigned, leave them erased. See
+ * i2c_hid_target_board_fw_flags() in board.c.
  */
 &flash0 {
 	partitions {
@@ -33,10 +41,17 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
+		/* 0x0000..0xdfbf, 57280 B (~55.9 KB); ~44 KB used today */
 		code_partition: partition@0 {
 			label = "code";
-			reg = <0x0 DT_SIZE_K(56)>;
+			reg = <0x0 0xdfc0>;
 		};
+		/* 0xdfc0..0xdfff, 0x40 = 64 B = 8 slots x 8 B */
+		misc_flags_partition: partition@dfc0 {
+			label = "misc-flags";
+			reg = <0xdfc0 0x40>;
+		};
+		/* 0xe000..0xffff, 8 KB = 4 erase pages, to end of flash */
 		storage_partition: partition@e000 {
 			label = "storage";
 			reg = <0xe000 DT_SIZE_K(8)>;

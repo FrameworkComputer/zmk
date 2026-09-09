@@ -7,3 +7,7 @@ CONFIG_UART_CONSOLE=n
 
 # GPIO
 CONFIG_GPIO=y
+
+# Link against code_partition, so the misc-flags and NVS partitions are
+# enforced by the linker instead of only described in the device tree.
+CONFIG_USE_DT_CODE_PARTITION=y

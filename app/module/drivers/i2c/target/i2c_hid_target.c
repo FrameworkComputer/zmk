@@ -88,6 +88,7 @@ struct i2c_hid_target_config {
 	uint16_t max_input_length;
 	uint16_t max_output_length;
 	uint16_t report_desc_length;
+	uint32_t fw_flags;
 };
 
 struct i2c_hid_target_data {
@@ -160,6 +161,14 @@ struct i2c_hid_target_data {
 	uint8_t pending_set_type;
 	uint8_t pending_set_id;
 };
+
+/* Boards that have nothing to add contribute no flags. See the doc comment
+ * on the declaration in i2c_hid.h.
+ */
+__weak uint32_t i2c_hid_target_board_fw_flags(void)
+{
+	return 0;
+}
 
 /* ---------- helpers --------------------------------------------------- */
 
@@ -725,7 +734,11 @@ static int i2c_hid_target_init(const struct device *dev)
 	data->hid_desc.wVendorID = cfg->vid;
 	data->hid_desc.wProductID = cfg->pid;
 	data->hid_desc.wVersionID = cfg->version_id;
-	data->hid_desc.reserved = 0;
+	/* Reserved by the HID-over-I2C spec, used here to report firmware
+	 * flags: the compile-time default from DT, plus whatever board code
+	 * knows only at runtime.
+	 */
+	data->hid_desc.reserved = cfg->fw_flags | i2c_hid_target_board_fw_flags();
 
 	/* Initialize I2C target config */
 	data->config.address = cfg->bus.addr;
@@ -787,6 +800,7 @@ static int i2c_hid_target_init(const struct device *dev)
 		.max_input_length = DT_INST_PROP(inst, max_input_length),      \
 		.max_output_length = DT_INST_PROP(inst, max_output_length),    \
 		.report_desc_length = DT_INST_PROP(inst, report_desc_length),  \
+		.fw_flags = DT_INST_PROP_OR(inst, fw_flags, 0),                \
 	};                                                                     \
                                                                                \
 	DEVICE_DT_INST_DEFINE(inst,                                            \
