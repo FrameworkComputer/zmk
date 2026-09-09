@@ -691,13 +691,28 @@ static void dahlia_vendor_reply(uint8_t opcode, uint8_t status,
 	dahlia_vendor_response_len = 2 + data_len;
 }
 
-/* STM32U073 hardware identifiers (see STM32U0 reference manual). */
 #define STM32_FLASHSIZE_ADDR   0x1FFF6EA0u  /* 16-bit KB value */
 #define STM32_UID_ADDR         0x1FFF6E50u  /* 12 bytes (96 bits) */
 
+static uint16_t dahlia_tp_module_read_chip_id(void) {
+	bool dbg_was_on = (RCC->DBGCFGR & RCC_DBGCFGR_DBGEN) != 0U;
+	uint16_t dev_id;
+
+	RCC->DBGCFGR |= RCC_DBGCFGR_DBGEN;
+	(void)RCC->DBGCFGR;
+
+	dev_id = (uint16_t)(DBGMCU->IDCODE & DBGMCU_IDCODE_DEV_ID);
+
+	if (!dbg_was_on) {
+		RCC->DBGCFGR &= ~RCC_DBGCFGR_DBGEN;
+	}
+
+	return dev_id;
+}
+
 static void dahlia_vendor_handle_get_hw_info(void)
 {
-	uint16_t chip_id = (uint16_t)(DBGMCU->IDCODE & 0xFFFu);
+	uint16_t chip_id = dahlia_tp_module_read_chip_id();
 	uint16_t flash_kb = *(volatile uint16_t *)STM32_FLASHSIZE_ADDR;
 	uint16_t ram_kb = 40;  /* STM32U073: SRAM1 32K + SRAM2 8K */
 
