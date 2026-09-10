@@ -147,6 +147,79 @@ Query the current swap state.
 - `value = 0` → swap is disabled.
 - `value = 1` → swap is enabled.
 
+### `0x12 — SET_FLAGS`
+
+Change some of the device's state bits.
+
+**Request** (9 bytes, little-endian)
+```
+[0x12, mask:u32, value:u32]
+```
+
+Only the bits set in `mask` are touched; their new values come from
+`value`. Bits outside `mask` are left alone, so a caller never has to
+read-modify-write — which matters, because the EC issues vendor writes
+of its own and the device stores only the most recent response.
+
+**Response** (6 bytes)
+```
+[0x12, status, flags:u32]
+```
+
+`flags` is the resulting state, reported whether or not the set
+succeeded, so no follow-up `GET_FLAGS` is needed.
+
+- `status = 0x00` on success.
+- `status = 0x01` if the request was short, or if `mask` names a bit that
+  is unknown or read-only. Nothing is changed in that case.
+- `status = 0x02` if the device failed to apply the change.
+
+Setting `FN_LOCK` writes NVS. That is normally a fast append, but an
+occasional garbage collection erases a page, and this part executes from
+flash — so allow for the device NAKing for a few tens of milliseconds
+after such a set, and retry. Setting a bit to the value it already has
+does nothing and costs no write.
+
+### `0x13 — GET_FLAGS`
+
+Read that state back as one bitmask.
+
+**Request** (1 byte)
+```
+[0x13]
+```
+
+**Response** (14 bytes, little-endian)
+```
+[0x13, 0x00, present:u32, flags:u32, writable:u32]
+```
+
+- `present` — the bits this firmware implements.
+- `flags` — their current values. Only meaningful within `present`.
+- `writable` — the subset of `present` that `SET_FLAGS` will accept.
+
+`present` is what lets a host support several firmware versions without
+a table mapping version to feature set: without it, a bit that exists
+and reads 0 is indistinguishable from one that does not exist. Combined
+with the `0xFF` "unknown opcode" status, which covers whole commands, a
+host can discover everything it needs by asking.
+
+Bit assignments are append-only. A retired setting drops out of
+`present`, but its bit is never reused — a host that knows the old
+meaning would silently misread the new one. A host should likewise
+ignore bits set in `present` that it does not recognise: that is newer
+firmware, not an error.
+
+| Bit | Name | Access | Backing |
+|-----|------|--------|---------|
+| 0 | `FN_LOCK` | R/W | FNLK layer, persisted in NVS under `dahlia/flags` |
+| 1 | `FN_CTRL_SWAP` | R/W | RAM only; the same state as `0x10`/`0x11` |
+| 2 | `UPDATE_PROTECT` | R/O | misc-flags slot 0 in flash |
+
+`UPDATE_PROTECT` is read-only by design: it is set when the firmware is
+built or flashed, never while it runs. See "Update protection" in
+`board.c`.
+
 ## Example transactions
 
 ### Read firmware version
@@ -174,6 +247,31 @@ EC ← dev:  GET_REPORT (Feature, id=0x20)  [0x02, 0x00,
                                            0x28, 0x00,          // ram_kb = 40
                                            XX XX XX XX XX XX
                                            XX XX XX XX XX XX]   // uid[12]
+```
+
+### Read state, then turn Fn Lock on
+```
+EC → dev:  SET_REPORT (Feature, id=0x20)  [0x13]
+EC ← dev:  GET_REPORT (Feature, id=0x20)  [0x13, 0x00,
+                                           0x07, 0x00, 0x00, 0x00,   // present:  all three bits
+                                           0x04, 0x00, 0x00, 0x00,   // flags:    UPDATE_PROTECT
+                                           0x03, 0x00, 0x00, 0x00]   // writable: FN_LOCK|FN_CTRL_SWAP
+Parse:  Fn Lock off, swap off, update protected; Fn Lock and swap settable
+
+EC → dev:  SET_REPORT (Feature, id=0x20)  [0x12,
+                                           0x01, 0x00, 0x00, 0x00,   // mask  = FN_LOCK
+                                           0x01, 0x00, 0x00, 0x00]   // value = FN_LOCK
+EC ← dev:  GET_REPORT (Feature, id=0x20)  [0x12, 0x00,
+                                           0x05, 0x00, 0x00, 0x00]   // now FN_LOCK|UPDATE_PROTECT
+```
+
+### Try to clear update protect (refused)
+```
+EC → dev:  SET_REPORT (Feature, id=0x20)  [0x12,
+                                           0x04, 0x00, 0x00, 0x00,   // mask = UPDATE_PROTECT
+                                           0x00, 0x00, 0x00, 0x00]
+EC ← dev:  GET_REPORT (Feature, id=0x20)  [0x12, 0x01,
+                                           0x05, 0x00, 0x00, 0x00]   // unchanged
 ```
 
 ### Enable and confirm the Fn/LCtrl swap
@@ -220,7 +318,7 @@ EC ← dev:  GET_REPORT (Feature, id=0x20)  [0x99, 0xFF]        // "unknown opco
 ## Adding new opcodes (future)
 
 Opcodes `0x03`–`0x0F` are reserved for future device-info / diagnostic
-queries. Opcodes `0x12`–`0x7F` are reserved for future config-set/get
+queries. Opcodes `0x14`–`0x7F` are reserved for future config-set/get
 pairs. Opcodes `0x80`–`0xFE` are reserved for higher-bandwidth operations
 (e.g. keycode remapping, macro upload). Opcode `0xFF` is reserved for
 "unknown opcode" (never assign it to a real command).

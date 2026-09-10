@@ -35,6 +35,7 @@
 #include <dt-bindings/zmk/hid_usage.h>
 
 #include <zephyr/settings/settings.h>
+#include <zephyr/sys/byteorder.h>
 
 #if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
 #include <zmk/events/hid_indicators_changed.h>
@@ -434,6 +435,9 @@ static int dahlia_tp_module_register_ioex_cb(void)
 }
 SYS_INIT(dahlia_tp_module_register_ioex_cb, APPLICATION, 90);
 
+/* Fn Lock layer. Exists whether or not CONFIG_SETTINGS persists it. */
+#define FNLK_LAYER_ID  2
+
 #if IS_ENABLED(CONFIG_SETTINGS)
 /* =========================================================================
  * Persistent flags in NVS (wear levelled)
@@ -444,8 +448,6 @@ SYS_INIT(dahlia_tp_module_register_ioex_cb, APPLICATION, 90);
  * These are restored on boot from NVS.
  * =========================================================================
  */
-#define FNLK_LAYER_ID  2
-
 #define DAHLIA_FLAG_FNLK   (1U << 0)
 
 static uint8_t dahlia_tp_module_flags;
@@ -739,6 +741,109 @@ static void dahlia_vendor_handle_get_fw_version(void)
 	dahlia_vendor_reply(0x01, 0x00, payload, sizeof(payload));
 }
 
+/* ---- State flags (opcodes 0x12 / 0x13) -----------------------------
+ *
+ * One bitmask over the deck's reportable state. SET takes a mask as well
+ * as a value so a caller only touches the bits it names: the bits do not
+ * share capabilities — update protect is read-only — and a whole-word
+ * write would force a read-modify-write, which races with the vendor
+ * writes the EC makes of its own accord.
+ *
+ * Booleans only, deliberately. If a setting ever needs a wider value it
+ * should get its own opcode rather than stretching this one.
+ */
+#define DAHLIA_TP_MODULE_VFLAG_FN_LOCK (1U << 0) /* R/W, persisted in NVS */
+#define DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP (1U << 1) /* R/W, RAM only; = opcode 0x10 */
+#define DAHLIA_TP_MODULE_VFLAG_UPDATE_PROTECT (1U << 2) /* R/O, misc-flags slot 0 */
+
+/*
+ * GET_FLAGS reports three masks, so a host can work out what this build
+ * supports without keeping a table of firmware versions:
+ *
+ *   present  - the bits this build implements
+ *   flags    - their values, meaningful only within present
+ *   writable - the subset of present that SET_FLAGS will accept
+ *
+ * Without present, a bit that exists and reads 0 is indistinguishable
+ * from one that does not exist at all.
+ *
+ * Assignments are append-only: a retired setting drops out of present,
+ * and its bit is never reused. Reusing one would leave a host that knows
+ * the old meaning silently misreading the new one, which is worse than
+ * it not knowing the bit at all.
+ */
+#define DAHLIA_TP_MODULE_VFLAGS_PRESENT \
+	(DAHLIA_TP_MODULE_VFLAG_FN_LOCK | DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP | \
+	 DAHLIA_TP_MODULE_VFLAG_UPDATE_PROTECT)
+
+/* The writable bits are the low ones, so this stays a contiguous mask. */
+#define DAHLIA_TP_MODULE_VFLAGS_WRITABLE \
+	(DAHLIA_TP_MODULE_VFLAG_FN_LOCK | DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP)
+
+static uint32_t dahlia_tp_module_vflags_get(void)
+{
+	uint32_t flags = 0;
+
+	if (zmk_keymap_layer_active(FNLK_LAYER_ID)) {
+		flags |= DAHLIA_TP_MODULE_VFLAG_FN_LOCK;
+	}
+	if (dahlia_tp_module_misc_slot_set(DAHLIA_TP_MODULE_MISC_SLOT_NO_AUTO_UPDATE)) {
+		flags |= DAHLIA_TP_MODULE_VFLAG_UPDATE_PROTECT;
+	}
+	if (dahlia_swap_state) {
+		flags |= DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP;
+	}
+
+	return flags;
+}
+
+/* Returns a vendor status byte: 0 ok, 1 bad argument, 2 internal error. */
+static uint8_t dahlia_tp_module_vflags_set(uint32_t mask, uint32_t value)
+{
+	if (mask & ~DAHLIA_TP_MODULE_VFLAGS_WRITABLE) {
+		return 0x01; /* unknown or read-only bit */
+	}
+
+	if (mask & DAHLIA_TP_MODULE_VFLAG_FN_LOCK) {
+		bool want = (value & DAHLIA_TP_MODULE_VFLAG_FN_LOCK) != 0;
+
+		/* The FNLK layer is the source of truth; the layer-change
+		 * listener mirrors it into NVS. Skipping the no-op case keeps
+		 * a redundant set from costing a flash write.
+		 *
+		 * Locking, to match the keymap's own &tog FNLK: ZMK ignores a
+		 * non-locking deactivate of a locked layer, and returns 0
+		 * when it does, so asking politely here would silently fail.
+		 */
+		if (want != zmk_keymap_layer_active(FNLK_LAYER_ID)) {
+			int rv = want ? zmk_keymap_layer_activate(FNLK_LAYER_ID,
+								 true)
+				      : zmk_keymap_layer_deactivate(FNLK_LAYER_ID,
+								    true);
+			if (rv < 0) {
+				return 0x02;
+			}
+		}
+	}
+
+	if (mask & DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP) {
+		bool want = (value & DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP) != 0;
+
+		if (dahlia_set_swap(want) < 0) {
+			return 0x02;
+		}
+	}
+
+	/* Confirm rather than trust: the layer API declines some requests
+	 * without saying so in its return value.
+	 */
+	if ((dahlia_tp_module_vflags_get() & mask) != (value & mask)) {
+		return 0x02;
+	}
+
+	return 0x00;
+}
+
 void zmk_i2c_hid_vendor_set_report(uint8_t id, const uint8_t *data, uint16_t len)
 {
 	/* Some HID-over-I2C implementations prefix the payload with the
@@ -781,6 +886,33 @@ void zmk_i2c_hid_vendor_set_report(uint8_t id, const uint8_t *data, uint16_t len
 	case 0x11: { /* GET_SWAP_FN_LCTRL */
 		uint8_t v = dahlia_swap_state ? 1 : 0;
 		dahlia_vendor_reply(opcode, 0x00, &v, 1);
+		break;
+	}
+
+	case 0x12: { /* SET_FLAGS */
+		uint8_t payload[4];
+		uint8_t status;
+
+		if (args_len < 8) {
+			dahlia_vendor_reply(opcode, 0x01, NULL, 0);  /* EINVAL */
+			break;
+		}
+		status = dahlia_tp_module_vflags_set(sys_get_le32(&args[0]),
+						     sys_get_le32(&args[4]));
+		/* Always report the resulting state, so a caller needs no
+		 * follow-up GET even when the set was rejected. */
+		sys_put_le32(dahlia_tp_module_vflags_get(), payload);
+		dahlia_vendor_reply(opcode, status, payload, sizeof(payload));
+		break;
+	}
+
+	case 0x13: { /* GET_FLAGS */
+		uint8_t payload[12];
+
+		sys_put_le32(DAHLIA_TP_MODULE_VFLAGS_PRESENT, &payload[0]);
+		sys_put_le32(dahlia_tp_module_vflags_get(), &payload[4]);
+		sys_put_le32(DAHLIA_TP_MODULE_VFLAGS_WRITABLE, &payload[8]);
+		dahlia_vendor_reply(opcode, 0x00, payload, sizeof(payload));
 		break;
 	}
 
