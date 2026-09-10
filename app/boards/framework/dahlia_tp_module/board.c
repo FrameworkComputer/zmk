@@ -38,6 +38,7 @@
 #include <zephyr/sys/byteorder.h>
 
 #if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+#include <zmk/hid_indicators.h>
 #include <zmk/events/hid_indicators_changed.h>
 #endif
 
@@ -760,6 +761,7 @@ static void dahlia_vendor_handle_get_fw_version(void)
 #define DAHLIA_TP_MODULE_VFLAG_FN_LOCK (1U << 0) /* R/W, persisted in NVS */
 #define DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP (1U << 1) /* R/W, RAM only; = opcode 0x10 */
 #define DAHLIA_TP_MODULE_VFLAG_UPDATE_PROTECT (1U << 2) /* R/O, misc-flags slot 0 */
+#define DAHLIA_TP_MODULE_VFLAG_CAPS_LOCK (1U << 3) /* R/O, from the host */
 
 /*
  * GET_FLAGS reports three masks, so a host can work out what this build
@@ -777,9 +779,15 @@ static void dahlia_vendor_handle_get_fw_version(void)
  * the old meaning silently misreading the new one, which is worse than
  * it not knowing the bit at all.
  */
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+#define DAHLIA_TP_MODULE_VFLAGS_PRESENT_INDICATORS DAHLIA_TP_MODULE_VFLAG_CAPS_LOCK
+#else
+#define DAHLIA_TP_MODULE_VFLAGS_PRESENT_INDICATORS 0
+#endif
+
 #define DAHLIA_TP_MODULE_VFLAGS_PRESENT \
 	(DAHLIA_TP_MODULE_VFLAG_FN_LOCK | DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP | \
-	 DAHLIA_TP_MODULE_VFLAG_UPDATE_PROTECT)
+	 DAHLIA_TP_MODULE_VFLAG_UPDATE_PROTECT | DAHLIA_TP_MODULE_VFLAGS_PRESENT_INDICATORS)
 
 /* The writable bits are the low ones, so this stays a contiguous mask. */
 #define DAHLIA_TP_MODULE_VFLAGS_WRITABLE \
@@ -798,6 +806,11 @@ static uint32_t dahlia_tp_module_vflags_get(void)
 	if (dahlia_swap_state) {
 		flags |= DAHLIA_TP_MODULE_VFLAG_FN_CTRL_SWAP;
 	}
+#if IS_ENABLED(CONFIG_ZMK_HID_INDICATORS)
+	if (zmk_hid_indicators_get_current_profile() & HID_LED_CAPS_LOCK) {
+		flags |= DAHLIA_TP_MODULE_VFLAG_CAPS_LOCK;
+	}
+#endif
 
 	return flags;
 }

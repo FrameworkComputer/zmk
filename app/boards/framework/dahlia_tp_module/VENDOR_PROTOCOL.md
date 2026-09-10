@@ -215,10 +215,17 @@ firmware, not an error.
 | 0 | `FN_LOCK` | R/W | FNLK layer, persisted in NVS under `dahlia/flags` |
 | 1 | `FN_CTRL_SWAP` | R/W | RAM only; the same state as `0x10`/`0x11` |
 | 2 | `UPDATE_PROTECT` | R/O | misc-flags slot 0 in flash |
+| 3 | `CAPS_LOCK` | R/O | the host's Caps Lock indicator |
 
 `UPDATE_PROTECT` is read-only by design: it is set when the firmware is
 built or flashed, never while it runs. See "Update protection" in
 `board.c`.
+
+`CAPS_LOCK` is read-only because the host owns it — it arrives as a HID
+LED output report, and a write here would be overwritten by the next
+one. A tool that wants to drive the LED should send that report instead.
+The bit is absent from `present` on a build without
+`CONFIG_ZMK_HID_INDICATORS`.
 
 ## Example transactions
 
@@ -253,7 +260,7 @@ EC ← dev:  GET_REPORT (Feature, id=0x20)  [0x02, 0x00,
 ```
 EC → dev:  SET_REPORT (Feature, id=0x20)  [0x13]
 EC ← dev:  GET_REPORT (Feature, id=0x20)  [0x13, 0x00,
-                                           0x07, 0x00, 0x00, 0x00,   // present:  all three bits
+                                           0x0f, 0x00, 0x00, 0x00,   // present:  all four bits
                                            0x04, 0x00, 0x00, 0x00,   // flags:    UPDATE_PROTECT
                                            0x03, 0x00, 0x00, 0x00]   // writable: FN_LOCK|FN_CTRL_SWAP
 Parse:  Fn Lock off, swap off, update protected; Fn Lock and swap settable
