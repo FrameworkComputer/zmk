@@ -462,7 +462,12 @@ static int dahlia_flags_settings_set(const char *key, size_t len,
 		if (read_cb(cb_arg, &val, sizeof(val)) > 0) {
 			dahlia_tp_module_flags = val;
 			if (dahlia_tp_module_flags & DAHLIA_FLAG_FNLK) {
-				zmk_keymap_layer_activate(FNLK_LAYER_ID, false);
+				/* Locking, as &tog FNLK would have left it.
+				 * Restoring it unlocked makes the first press
+				 * of the Fn Lock key re-lock the layer rather
+				 * than turn it off.
+				 */
+				zmk_keymap_layer_activate(FNLK_LAYER_ID, true);
 			}
 		}
 		return 0;
